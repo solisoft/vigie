@@ -1,0 +1,7 @@
+<%# preview: { "body_lines": ["Incident ouvert : API est indisponible", "Sonde : API (https://api.example.com)", "HTTP 503 (attendu 200–399)"] } %>
+<div style="font-family: system-ui, sans-serif; color: #1c1917; max-width: 560px">
+  <p style="font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #78716c">Vigie</p>
+  <% body_lines.each do |line| %>
+    <p style="margin: 0 0 8px"><%= line %></p>
+  <% end %>
+</div>
