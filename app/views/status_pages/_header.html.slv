@@ -1,0 +1,17 @@
+<header class="masthead">
+  <a class="masthead-brand" href="/s/<%= page.slug %>">
+    <% if page.logo_url.present? %>
+      <img src="<%= page.logo_url %>" alt="">
+    <% else %>
+      <%- partial("shared/mark", {}) %>
+    <% end %>
+    <span>
+      <h1><%= page.title %></h1>
+      <% if page.description.present? %><p class="masthead-sub"><%= page.description %></p><% end %>
+    </span>
+  </a>
+  <nav class="masthead-links" aria-label="S'abonner">
+    <a href="/s/<%= page.slug %>/incidents.atom">Flux Atom</a>
+    <a href="/api/v1/status?page=<%= page.slug %>">API JSON</a>
+  </nav>
+</header>

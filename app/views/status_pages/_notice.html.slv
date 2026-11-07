@@ -1,0 +1,16 @@
+<article class="notice impact-<%= incident["impact"] %>">
+  <h3><a href="/s/<%= page.slug %>/incidents/<%= incident["id"] %>"><%= incident["title"] %></a></h3>
+  <p class="notice-meta">
+    <span class="chip s-<%= incident["status"] == "resolved" ? "up" : (incident["impact"] == "degraded" ? "degraded" : "down") %>"><%- status_icon(incident["status"] == "resolved" ? "up" : (incident["impact"] == "degraded" ? "degraded" : "down")) %><%= incident["status_label"] %></span>
+    <%= incident["impact_label"] %> · depuis le <time datetime="<%= iso_time(incident["started_at"]) %>"><%= french_time(incident["started_at"]) %></time>
+  </p>
+  <ol class="timeline">
+    <% incident["updates"].each do |update| %>
+      <li>
+        <strong><%= update["status_label"] %></strong>
+        <time datetime="<%= iso_time(update["at"]) %>"><%= french_time(update["at"]) %></time>
+        <p><%= update["message"] %></p>
+      </li>
+    <% end %>
+  </ol>
+</article>

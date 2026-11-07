@@ -1,0 +1,106 @@
+<main class="watch" data-live-url="<%= @live_url %>">
+  <%- partial("status_pages/header", {"page": @page}) %>
+
+  <div data-live-region>
+    <section class="banner level-<%= @board["status"]["level"] %>" aria-labelledby="banner-title">
+      <span class="banner-icon"><%- status_icon(@board["status"]["level"]) %></span>
+      <h2 id="banner-title"><%= @board["status"]["label"] %></h2>
+      <p>
+        <span class="live-dot" data-live-dot data-state="off" aria-hidden="true"></span>
+        Mis à jour le <time datetime="<%= iso_time(@board["generated_at"]) %>"><%= french_time(@board["generated_at"]) %></time>
+        <span data-live-text class="faint"></span>
+      </p>
+    </section>
+
+    <% if @board["open_incidents"].length > 0 %>
+      <section class="section" aria-labelledby="open-title">
+        <h2 class="section-title" id="open-title">Incidents en cours</h2>
+        <% @board["open_incidents"].each do |incident| %>
+          <%- partial("status_pages/notice", {"incident": incident, "page": @page}) %>
+        <% end %>
+      </section>
+    <% end %>
+
+    <% if @board["maintenances"].length > 0 %>
+      <section class="section" aria-labelledby="maintenance-title">
+        <h2 class="section-title" id="maintenance-title">Maintenances</h2>
+        <% @board["maintenances"].each do |window| %>
+          <article class="notice is-maintenance">
+            <h3><%= window["title"] %></h3>
+            <p class="notice-meta">
+              <span class="chip s-maintenance"><%- status_icon("maintenance") %><%= window["active"] ? "En cours" : "Planifiée" %></span>
+              du <%= french_time(window["starts_at"]) %> au <%= french_time(window["ends_at"]) %>
+            </p>
+            <% if window["description"].present? %><p><%= window["description"] %></p><% end %>
+          </article>
+        <% end %>
+      </section>
+    <% end %>
+
+    <section class="section" aria-labelledby="components-title">
+      <h2 class="section-title" id="components-title">
+        <span>Services</span>
+        <span class="faint">Disponibilité sur 90 jours</span>
+      </h2>
+      <% if @board["components"].length == 0 %>
+        <p class="empty">Aucun service n'est encore publié sur cette page.</p>
+      <% end %>
+      <% @board["groups"].each do |group| %>
+        <div class="group">
+          <% if group["name"].present? %><h3 class="group-name"><%= group["name"] %></h3><% end %>
+          <ul class="components">
+            <% group["components"].each do |service| %>
+              <li class="component">
+                <div class="component-head">
+                  <div>
+                    <h4 class="component-name"><%= service["name"] %></h4>
+                    <% if service["description"].present? %><p class="component-desc"><%= service["description"] %></p><% end %>
+                  </div>
+                  <span class="chip s-<%= service["status"] %>"><%- status_icon(service["status"]) %><%= service["status_label"] %></span>
+                </div>
+                <ol class="strip" role="img" aria-label="<%= service["name"] %> : <%= percent_label(service["uptime"]["90d"]) %> de disponibilité sur 90 jours">
+                  <% service["bars"].each do |bar| %><li class="b-<%= bar["level"] %>" title="<%= bar["label"] %>"></li><% end %>
+                </ol>
+                <div class="strip-legend">
+                  <span><span class="span-90">il y a 90 jours</span><span class="span-30">il y a 30 jours</span></span>
+                  <span><strong class="mono"><%= percent_label(service["uptime"]["90d"]) %></strong> · 24 h <span class="mono"><%= percent_label(service["uptime"]["24h"]) %></span></span>
+                  <span>aujourd'hui</span>
+                </div>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+      <ul class="key" aria-label="Légende">
+        <li><i class="strip-key b-ok" style="background: var(--ok)"></i>Opérationnel</li>
+        <li><i style="background: repeating-linear-gradient(135deg, var(--warn) 0 3px, transparent 3px 5px)"></i>Perturbations</li>
+        <li><i style="background: var(--bad)"></i>Panne</li>
+        <li><i style="background: radial-gradient(circle, var(--maint) 1.2px, transparent 1.6px) 0 0 / 4px 4px, var(--maint-bg)"></i>Maintenance</li>
+        <li><i style="background: var(--none); height: 6px"></i>Pas de données</li>
+      </ul>
+    </section>
+
+    <section class="section" aria-labelledby="history-title">
+      <h2 class="section-title" id="history-title">Historique des incidents · 90 jours</h2>
+      <% if @board["history"].length == 0 %>
+        <p class="empty">Aucun incident sur les 90 derniers jours.</p>
+      <% else %>
+        <ul class="history">
+          <% @board["history"].each do |incident| %>
+            <li>
+              <a href="/s/<%= @page.slug %>/incidents/<%= incident["id"] %>"><%= incident["title"] %></a>
+              <p><%= french_time(incident["started_at"]) %> · <%= incident["impact_label"] %> · résolu en <%= incident["duration"] %></p>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
+  </div>
+
+  <p class="sr-only" aria-live="polite" data-live-announce></p>
+
+  <footer class="colophon">
+    <span>Heures en UTC · actualisation en direct</span>
+    <span>Surveillé par <strong>Vigie</strong>, écrit en <a href="https://soli.solisoft.net">Soli</a></span>
+  </footer>
+</main>

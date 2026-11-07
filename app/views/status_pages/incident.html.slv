@@ -1,0 +1,8 @@
+<main class="watch">
+  <%- partial("status_pages/header", {"page": @page}) %>
+  <p class="section"><a href="/s/<%= @page.slug %>">← Retour à la page de statut</a></p>
+  <%- partial("status_pages/notice", {"incident": @incident, "page": @page}) %>
+  <% if @incident["duration"] %>
+    <p class="muted">Résolu le <%= french_time(@incident["resolved_at"]) %>, après <%= @incident["duration"] %>.</p>
+  <% end %>
+</main>
