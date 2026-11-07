@@ -46,18 +46,27 @@
     });
   }
 
-  // Monitor form: show only the fieldset of the chosen kind.
+  // Monitor forms (a select, or radios on a service): show only the fields
+  // of the chosen kind.
   function kindForms() {
     document.querySelectorAll('[data-kind-form]:not([data-kind-ready])').forEach(function (form) {
       form.setAttribute('data-kind-ready', '');
       var select = form.querySelector('[data-kind-select]');
-      if (!select) return;
+      var radios = form.querySelectorAll('[data-kind-radio]');
+      if (!select && !radios.length) return;
+      function current() {
+        if (select) return select.value;
+        var checked = form.querySelector('[data-kind-radio]:checked');
+        return checked ? checked.value : '';
+      }
       function sync() {
+        var kind = current();
         form.querySelectorAll('[data-kind]').forEach(function (fieldset) {
-          fieldset.hidden = fieldset.getAttribute('data-kind') !== select.value;
+          fieldset.hidden = fieldset.getAttribute('data-kind') !== kind;
         });
       }
-      select.addEventListener('change', sync);
+      if (select) select.addEventListener('change', sync);
+      radios.forEach(function (radio) { radio.addEventListener('change', sync); });
       sync();
     });
   }

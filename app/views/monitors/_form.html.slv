@@ -84,7 +84,7 @@
   <div class="row">
     <div>
       <%- f.label("interval_s", "Intervalle (s)") %>
-      <%- f.number_field("interval_s", {"min": 30, "max": 3600}) %>
+      <%- f.number_field("interval_s", {"min": 30, "max": 604800}) %>
       <%- f.errors_for("interval_s") %>
     </div>
     <div>

@@ -21,6 +21,8 @@ class MonitorsController < AdminController
   def new
     @monitor = Monitor.new({
       "kind": params["kind"] || "http",
+      "url": params["url"].to_s,
+      "name": params["name"].to_s,
       "interval_s": 60,
       "failure_threshold": 2,
       "timeout_s": 10,

@@ -43,6 +43,20 @@ describe("SchedulerJob") do
     assert(pushed >= now + 60)
     assert_eq(SchedulerJob.perform_now({}), 0)
   end
+
+  test("a daily heartbeat is still evaluated every minute") do
+    now = DateTime.utc.to_unix
+    nightly = Monitor.create({
+      "name": "Nightly",
+      "kind": "heartbeat",
+      "interval_s": 86400,
+      "grace_s": 600
+    })
+    assert_eq(SchedulerJob.perform_now({}), 1)
+    pushed = Monitor.find(nightly._key).next_check_at
+    assert(pushed >= now + 60)
+    assert(pushed < now + 120, "not a day later")
+  end
 end
 
 describe("CheckMonitorJob") do

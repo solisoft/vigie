@@ -75,6 +75,95 @@ class ServiceSetup
     }
   end
 
+  # The host a monitor watches: a certificate's host, an address's host; nil
+  # for a heartbeat.
+  static def host_of(monitor)
+    return monitor.host.to_s.downcase if monitor.kind == "tls" && monitor.host.present?
+    return nil unless monitor.kind == "http"
+
+    text = monitor.url.to_s.trim
+    scheme_end = text.index_of("://")
+    return nil if scheme_end < 0
+
+    rest = text.substring(scheme_end + 3, text.length)
+    authority = rest.split("/")[0].split("?")[0].split("#")[0].split("@").last
+    host = authority.split(":")[0].downcase
+    host.blank? ? nil : host
+  end
+
+  # A monitor of the chosen kind, created behind a service. Only what the
+  # kind needs is asked: an address (http), a host and port (tls), a period
+  # (heartbeat); the rest takes the service defaults and can be tuned on the
+  # monitor's page. A certificate already watched is reused, not doubled.
+  # -> {"monitor": Monitor or nil, "errors": [...]}
+  static def add_monitor(component, kind, form)
+    monitor = ServiceSetup.build_monitor(component, kind, form)
+    if monitor.nil?
+      return {"monitor": nil, "errors": [{
+        "field": "kind",
+        "message": "type de sonde inconnu"
+      }]}
+    end
+
+    existing = nil
+    if kind == "tls"
+      existing = Monitor.where({
+        "kind": "tls",
+        "host": monitor["host"],
+        "port": monitor["port"]
+      }).first
+    end
+    created = existing ?? Monitor.create(monitor)
+    if created._errors
+      return {"monitor": nil, "errors": created._errors}
+    end
+
+    unless component.monitor_ids.includes?(created._key)
+      component.monitor_ids = component.monitor_ids + [created._key]
+      component.save
+    end
+    {"monitor": created, "errors": []}
+  end
+
+  static def build_monitor(component, kind, form)
+    name = form["name"].to_s.trim
+    if kind == "http"
+      return {
+        "name": name.present? ? name : "#{component.name} · #{form["url"].to_s.trim}",
+        "kind": "http",
+        "url": form["url"].to_s.trim,
+        "interval_s": 60,
+        "degraded_ms": 1500,
+        "failure_threshold": 2,
+        "follow_redirects": true
+      }
+    end
+
+    if kind == "tls"
+      host = form["host"].to_s.trim.downcase
+      port = form["port"].to_s.trim.present? ? form["port"].to_s.trim.to_i : 443
+      return {
+        "name": name.present? ? name : "Certificat #{host}",
+        "kind": "tls",
+        "host": host,
+        "port": port,
+        "interval_s": 3600,
+        "tls_warn_days": 14
+      }
+    end
+    if kind == "heartbeat"
+      hours = form["every_hours"].to_s.trim.present? ? form["every_hours"].to_s.trim.to_i : 1
+      return {
+        "name": name.present? ? name : "#{component.name} · tâche planifiée",
+        "kind": "heartbeat",
+        "interval_s": hours * 3600,
+        "grace_s": 600
+      }
+    end
+
+    nil
+  end
+
   # The monitors list of the admin, as people read it: page by page, service
   # by service, then the monitors no service shows.
   # -> [{"title", "services": [{"component", "monitors": [Monitor]}]}]

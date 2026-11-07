@@ -1,6 +1,8 @@
 <header class="desk-head">
   <div><h1><%= title %></h1><p>Page <a href="/admin/pages/<%= @page._key %>"><%= @page.title %></a></p></div>
   <% remove_confirm = "Retirer ce service ? Les sondes qu'il est seul à utiliser partent avec leur historique." %>
+  <% probe_confirm = "Retirer cette sonde ? Sans autre service pour l'utiliser, elle part avec son historique." %>
+  <% remove_probe = {"method": "delete", "confirm": probe_confirm} %>
   <% remove_options = {"method": "delete", "confirm": remove_confirm} %>
   <div class="actions">
     <span class="danger"><%- button_to("Retirer le service", "/admin/composants/#{@component._key}", remove_options) %></span>
@@ -21,30 +23,52 @@
               <td><a href="/admin/sondes/<%= monitor._key %>"><%= monitor.name %></a><span class="target"><%= monitor.target_label %></span></td>
               <td><%= monitor.kind_label %></td>
               <td><span class="chip s-<%= monitor.paused ? "paused" : monitor.status %>"><%- status_icon(monitor.paused ? "paused" : monitor.status) %><%= status_text(monitor.paused ? "paused" : monitor.status) %></span></td>
-              <td class="ghost"><%- button_to("Détacher", "/admin/composants/#{@component._key}/sondes/#{monitor._key}", {"method": "delete"}) %></td>
+              <td class="ghost"><%- button_to("Retirer", "/admin/composants/#{@component._key}/sondes/#{monitor._key}", remove_probe) %></td>
             </tr>
           <% end %>
         </tbody>
       </table>
     </div>
   <% end %>
-  <div class="panel-body attach-row">
-    <% if @attachable.length > 0 %>
-      <form class="form attach-form" action="/admin/composants/<%= @component._key %>/sondes" method="POST">
-        <%- csrf_field() %>
-        <div>
-          <label for="attach_monitor">Rattacher une sonde existante</label>
-          <select id="attach_monitor" name="monitor_id" required>
-            <option value="">Choisir une sonde…</option>
-            <% for monitor in @attachable %>
-              <option value="<%= monitor._key %>"><%= monitor.name %> — <%= monitor.kind_label %></option>
-            <% end %>
-          </select>
-        </div>
-        <div class="form-actions"><button type="submit">Rattacher</button></div>
-      </form>
-    <% end %>
-    <p class="hint">Une tâche planifiée à surveiller ? <a href="/admin/sondes/nouvelle?kind=heartbeat&amp;composant=<%= @component._key %>">Créer un heartbeat pour ce service</a>.</p>
+  <div class="panel-body">
+    <form class="form add-probe" action="/admin/composants/<%= @component._key %>/sondes" method="POST" data-kind-form>
+      <%- csrf_field() %>
+      <h3 class="form-title">Ajouter une sonde</h3>
+      <% if @add_errors.length > 0 %>
+        <div class="form-errors" role="alert">Sonde refusée : <%= @add_errors.map { |error| error["message"] }.join(", ") %>.</div>
+      <% end %>
+      <fieldset class="kind-switch">
+        <legend>Ce qu'elle vérifie</legend>
+        <% for option in @kind_options %>
+          <label class="kind-option">
+            <input type="radio" name="kind" value="<%= option["value"] %>" data-kind-radio <%- @new_kind == option["value"] ? "checked" : "" %>>
+            <span class="kind-name"><%= option["label"] %></span>
+            <span class="kind-hint"><%= option["hint"] %></span>
+          </label>
+        <% end %>
+      </fieldset>
+      <div class="kind-fields" data-kind="http">
+        <label for="probe_url">Adresse</label>
+        <input id="probe_url" type="url" name="url" inputmode="url" value="<%= @new_form["url"] ?? @default_url %>" placeholder="https://exemple.fr/sante">
+        <p class="hint">Contrôlée chaque minute : en panne si elle ne répond pas en 10 s ou renvoie une erreur, dégradée au-delà de 1,5 s.</p>
+      </div>
+      <div class="kind-fields row" data-kind="tls">
+        <div><label for="probe_host">Hôte</label><input id="probe_host" type="text" name="host" value="<%= @new_form["host"] ?? @service_host %>" placeholder="exemple.fr"></div>
+        <div><label for="probe_port">Port</label><input id="probe_port" type="number" name="port" value="<%= @new_form["port"] ?? 443 %>" min="1" max="65535"></div>
+        <p class="hint">Vérifiée chaque heure : dégradée 14 jours avant l'expiration, en panne une fois expirée.</p>
+      </div>
+      <div class="kind-fields" data-kind="heartbeat">
+        <label for="probe_every">La tâche tourne toutes les</label>
+        <div class="inline-field"><input id="probe_every" type="number" name="every_hours" value="<%= @new_form["every_hours"] ?? 24 %>" min="1" max="168"> heure(s)</div>
+        <p class="hint">Vigie vous donne une adresse à appeler à la fin de la tâche ; sans appel à temps (10 min de marge), la sonde passe en panne.</p>
+      </div>
+      <details class="probe-name">
+        <summary>Nommer la sonde</summary>
+        <label for="probe_name" class="sr-only">Nom de la sonde</label>
+        <input id="probe_name" type="text" name="name" maxlength="80" value="<%= @new_form["name"] %>" placeholder="Nom choisi par Vigie si vide">
+      </details>
+      <div class="form-actions"><button type="submit">Ajouter la sonde</button></div>
+    </form>
   </div>
 </section>
 

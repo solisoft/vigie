@@ -60,7 +60,7 @@ middleware("require_login", fn() {
   get("/admin/composants/:id", "components#edit", name: "component")
   patch("/admin/composants/:id", "components#update")
   delete("/admin/composants/:id", "components#destroy")
-  post("/admin/composants/:id/sondes", "components#attach", name: "component_monitors")
+  post("/admin/composants/:id/sondes", "components#add_monitor", name: "component_monitors")
   delete("/admin/composants/:id/sondes/:monitor_id", "components#detach")
 
   get("/admin/incidents", "incidents#index", name: "incidents")

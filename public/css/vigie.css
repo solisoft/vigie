@@ -492,11 +492,36 @@ a:hover { color: var(--beam); }
 
 /* Admin: services */
 .form-title { margin: 0; font: 600 1.05rem/1.2 var(--font-display); }
-.attach-row { display: grid; gap: 10px; }
-.attach-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; max-width: none; }
-.attach-form > div:first-of-type { flex: 1 1 280px; }
-.attach-row .hint { margin: 0; font-size: .85rem; color: var(--ink-soft); }
 .ledger td.ghost form { margin: 0; }
 .ledger td.ghost button { padding: 5px 10px; font-size: .8rem; }
 .service-group th { padding-top: 18px; font: 600 .95rem/1.2 var(--font-display); letter-spacing: 0; text-transform: none; color: var(--ink); }
 .choices-title { margin: 12px 0 4px; font-weight: 600; font-size: .85rem; color: var(--ink-soft); }
+
+/* Admin: add a probe to a service — the kind first, then only its fields. */
+.add-probe { max-width: 760px; }
+.kind-switch {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px;
+  border: 0 !important; padding: 0 !important;
+}
+.kind-switch legend { padding: 0 !important; margin-bottom: 8px; }
+.kind-option {
+  position: relative; display: grid; gap: 2px;
+  padding: 12px 14px 12px 40px; border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--paper); cursor: pointer;
+  margin: 0 !important; font-weight: 400 !important;
+}
+.kind-option input { position: absolute; left: 14px; top: 15px; width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
+.kind-option .kind-name { font-weight: 600; font-size: .95rem; color: var(--ink); }
+.kind-option .kind-hint { font-size: .82rem; color: var(--ink-soft); }
+.kind-option:hover { border-color: color-mix(in srgb, var(--ink) 35%, var(--rule)); }
+.kind-option:has(input:checked) { border-color: var(--ink); background: var(--surface); box-shadow: inset 3px 0 0 var(--beam); }
+.kind-option:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.add-probe .kind-fields { display: grid; gap: 4px; }
+.add-probe .kind-fields.row { grid-template-columns: 1fr 140px; gap: 4px 16px; }
+.add-probe .kind-fields.row .hint { grid-column: 1 / -1; }
+.add-probe .hint { margin: 2px 0 0; }
+.inline-field { display: flex; align-items: center; gap: 10px; }
+.inline-field input { width: 90px !important; }
+.probe-name summary { cursor: pointer; font-size: .88rem; color: var(--ink-soft); }
+.probe-name[open] summary { margin-bottom: 6px; }
+@media (max-width: 520px) { .add-probe .kind-fields.row { grid-template-columns: 1fr; } }

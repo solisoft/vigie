@@ -8,7 +8,7 @@ class SchedulerJob
     now = DateTime.utc.to_unix
     due = SchedulerJob.due_monitors(now)
     due.each do |monitor|
-      monitor.next_check_at = now + monitor.interval_s
+      monitor.next_check_at = now + monitor.check_every
       monitor.save
       CheckMonitorJob.perform_later(
         {"monitor_id": monitor._key},

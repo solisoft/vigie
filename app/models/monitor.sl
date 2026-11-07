@@ -20,6 +20,10 @@ const HTTP_METHODS = [
 ]
 const MIN_INTERVAL_S = 30
 const MAX_INTERVAL_S = 3600
+# A heartbeat's interval is the period of the job that pings it: a nightly
+# backup is a day. It is evaluated every HEARTBEAT_EVAL_S whatever its period.
+const MAX_HEARTBEAT_INTERVAL_S = 7 * 86400
+const HEARTBEAT_EVAL_S = 60
 
 class Monitor < Model
   validates("name", {"custom": "_validate"})
@@ -60,6 +64,14 @@ class Monitor < Model
 
   def kind_label
     Monitor.label_for_kind(@kind)
+  end
+
+  # Seconds until the next evaluation: the interval for a probe, a minute
+  # for a heartbeat (reading its last ping costs nothing).
+  def check_every
+    return [this.interval_s, HEARTBEAT_EVAL_S].min if @kind == "heartbeat"
+
+    @interval_s
   end
 
   def due?(now)
@@ -140,7 +152,11 @@ class Monitor < Model
       errors.push({"field": "kind", "message": "type inconnu"})
     end
     interval = @interval_s.to_i
-    if interval < MIN_INTERVAL_S || interval > MAX_INTERVAL_S
+    if @kind == "heartbeat"
+      if interval < MIN_INTERVAL_S || interval > MAX_HEARTBEAT_INTERVAL_S
+        errors.push({"field": "interval_s", "message": "entre 30 s et 7 jours (604800 s)"})
+      end
+    elsif interval < MIN_INTERVAL_S || interval > MAX_INTERVAL_S
       errors.push({"field": "interval_s", "message": "entre 30 s et 1 h (3600 s)"})
     end
     threshold = @failure_threshold.to_i

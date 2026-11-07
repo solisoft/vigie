@@ -44,27 +44,46 @@ class ComponentsController < AdminController
     redirect("/admin/pages/#{this.component.page_id}")
   end
 
-  # POST /admin/composants/:id/sondes — put an existing monitor behind it
-  def attach
-    component = Component.find(params["id"])
-    monitor = Monitor.find(params["monitor_id"].to_s)
-    unless component.monitor_ids.includes?(monitor._key)
-      component.monitor_ids = component.monitor_ids + [monitor._key]
-      component.save
+  # POST /admin/composants/:id/sondes — a new monitor of the chosen kind
+  def add_monitor
+    @component = Component.find(params["id"])
+    @new_kind = params["kind"].to_s
+    @new_form = permit(
+      params,
+      {
+        "name": true,
+        "url": true,
+        "host": true,
+        "port": true,
+        "every_hours": true
+      }
+    )
+    outcome = ServiceSetup.add_monitor(@component, @new_kind, @new_form)
+    if outcome["errors"].length > 0
+      @add_errors = outcome["errors"]
+      @_service_page
+      return render("components/edit", {}, {"status": 422})
     end
-    flash("notice", "Sonde « #{monitor.name} » rattachée.")
-    redirect("/admin/composants/#{component._key}")
+
+    flash("notice", "Sonde « #{outcome["monitor"].name} » ajoutée : premier contrôle dans quelques secondes.")
+    redirect("/admin/composants/#{this.component._key}")
   end
 
-  # DELETE /admin/composants/:id/sondes/:monitor_id — take a monitor off it
+  # DELETE /admin/composants/:id/sondes/:monitor_id — take a monitor off it;
+  # deleted with its history unless another service still uses it
   def detach
     component = Component.find(params["id"])
-    monitor_id = params["monitor_id"].to_s
+    monitor = Monitor.find(params["monitor_id"].to_s)
     component.monitor_ids = component.monitor_ids.filter do |id|
-      id != monitor_id
+      id != monitor._key
     end
     component.save
-    flash("notice", "Sonde détachée : elle continue de tourner, sans compter pour ce service.")
+    if monitor.components.length == 0
+      monitor.remove_with_history
+      flash("notice", "Sonde « #{monitor.name} » supprimée.")
+    else
+      flash("notice", "Sonde « #{monitor.name} » retirée de ce service ; un autre service l'utilise encore.")
+    end
     redirect("/admin/composants/#{component._key}")
   end
 
@@ -87,9 +106,30 @@ class ComponentsController < AdminController
   def _service_page
     @page = StatusPage.find(@component.page_id)
     @monitors = Monitor.where("doc._key IN @ids", {"ids": @component.monitor_ids}).order("name").all
-    @attachable = Monitor.order("name").all.filter do |monitor|
-      !@component.monitor_ids.includes?(monitor._key)
-    end
+    @service_host = @monitors.map do |monitor|
+      ServiceSetup.host_of(monitor)
+    end.compact.first
+    @new_kind ||= "http"
+    @default_url = @service_host.nil? ? "" : "https://#{this.service_host}/"
+    @kind_options = [
+      {
+        "value": "http",
+        "label": "Une adresse web",
+        "hint": "répond, et vite"
+      },
+      {
+        "value": "tls",
+        "label": "Un certificat",
+        "hint": "n'expire pas"
+      },
+      {
+        "value": "heartbeat",
+        "label": "Une tâche planifiée",
+        "hint": "s'est bien exécutée"
+      }
+    ]
+    @new_form ||= {}
+    @add_errors ||= []
     @nav = "pages"
     @title = "Service « #{this.component.name} »"
     @description = "Un service de la page #{this.page.title}"
