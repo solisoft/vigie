@@ -53,7 +53,13 @@
               <li class="component">
                 <div class="component-head">
                   <div>
-                    <h4 class="component-name"><%= service["name"] %></h4>
+                    <h4 class="component-name">
+                      <% if service["url"].present? %>
+                        <a class="component-link" href="<%= service["url"] %>" target="_blank" rel="noopener noreferrer"><%= service["name"] %><svg class="external" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M7 1h4v4M11 1 5.5 6.5M9.5 7v3.5h-8.5v-8.5h3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr-only"> (ouvre un nouvel onglet)</span></a>
+                      <% else %>
+                        <%= service["name"] %>
+                      <% end %>
+                    </h4>
                     <% if service["description"].present? %><p class="component-desc"><%= service["description"] %></p><% end %>
                   </div>
                   <span class="chip s-<%= service["status"] %>"><%- status_icon(service["status"]) %><%= service["status_label"] %></span>

@@ -58,7 +58,10 @@ const PRODUCTION_SITES = [
   ["Le Télégraphe", "v2.letelegraphe.org", "Clients", "Le Télégraphe", 399],
   ["Privatisation Télégraphe", "privatisation.letelegraphe.org", "Clients", "Le Télégraphe, privatisation", 399],
   ["Vitaliseur", "vitaliseur.com", "Clients", "Redirige vers vitaliseurdemarion.fr", 399, "/", true],
-  ["95 degrés", "95degres.com", "Clients", "95degres.com", 399]
+  ["95 degrés", "95degres.com", "Clients", "95degres.com", 399],
+  ["Batitel", "batitel.com", "Clients", "Le site de Batitel", 399],
+  ["Batitel web", "batitelweb.com", "Clients", "batitelweb.com", 399],
+  ["Batitel gestion", "gestion.batitel.com", "Clients", "L'outil de gestion de Batitel", 399]
 ]
 
 class ProductionSetup
@@ -75,9 +78,7 @@ class ProductionSetup
     }
   end
 
-  static def admin
-    email = getenv("VIGIE_ADMIN_EMAIL")
-    password = getenv("VIGIE_ADMIN_PASSWORD")
+  static def admin(email = getenv("VIGIE_ADMIN_EMAIL"), password = getenv("VIGIE_ADMIN_PASSWORD"))
     return nil if email.blank? || password.blank?
 
     existing = User.find_by("email", email)

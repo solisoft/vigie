@@ -92,6 +92,7 @@ class StatusBoard
     end.flatten
     {
       "name": component.name,
+      "url": StatusBoard.site_url(component, board_context),
       "slug": component.slug,
       "description": component.description,
       "group": component.group_name,
@@ -103,6 +104,17 @@ class StatusBoard
   end
 
   # nil for a paused or deleted monitor: it does not speak for its component.
+  # The address a visitor can open for a component: the URL of its first HTTP
+  # monitor, or nil when it has none (a heartbeat, a certificate alone).
+  static def site_url(component, board_context)
+    http = component.monitor_ids.map do |monitor_id|
+      board_context["monitors"][monitor_id]
+    end.compact.find do |monitor|
+      monitor.kind == "http" && monitor.url.to_s.starts_with("http")
+    end
+    http&.url
+  end
+
   static def monitor_status(monitor_id, board_context)
     monitor = board_context["monitors"][monitor_id]
     return nil if monitor.nil? || monitor.paused

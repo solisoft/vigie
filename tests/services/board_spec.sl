@@ -57,6 +57,25 @@ describe("StatusBoard") do
     assert_eq(board["components"][0]["bars"].length, 90)
   end
 
+  test("a component links to its HTTP monitor's address; a heartbeat has none") do
+    beat = Monitor.create({
+      "name": "Cron",
+      "kind": "heartbeat",
+      "interval_s": 3600
+    })
+    Component.create({
+      "page_id": board_page._key,
+      "name": "Cron",
+      "group_name": "",
+      "position": 2,
+      "monitor_ids": [beat._key]
+    })
+    by_name = StatusBoard.build(board_page, DateTime.utc.to_unix)["components"].index_by("name")
+    assert_eq(by_name["Web"]["url"], "https://www.example.com")
+    assert_eq(by_name["API"]["url"], "https://api.example.com")
+    assert_null(by_name["Cron"]["url"])
+  end
+
   test("one down out of two is a partial outage; all down is major") do
     board_set(board_api, "down")
     assert_eq(StatusBoard.build(board_page, DateTime.utc.to_unix)["status"]["level"], "partial")

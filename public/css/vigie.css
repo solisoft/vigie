@@ -197,6 +197,10 @@ a:hover { color: var(--beam); }
 .component + .component { border-top: 1px solid var(--rule); }
 .component-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .component-name { margin: 0; font-weight: 600; font-size: 1rem; }
+.component-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: .35em; }
+.component-link:hover, .component-link:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.component-link .external { opacity: .55; flex: none; }
+.component-link:hover .external, .component-link:focus-visible .external { opacity: 1; }
 .component-desc { margin: 2px 0 0; font-size: .85rem; color: var(--ink-soft); }
 
 .chip {
