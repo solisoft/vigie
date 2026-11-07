@@ -80,7 +80,7 @@ class MaintenancesController < AdminController
   def _form_page(title)
     @starts_local = @_local_from_unix(@maintenance.starts_at)
     @ends_local = @_local_from_unix(@maintenance.ends_at)
-    @monitor_choices = @_monitor_choices
+    @monitor_choices = @_service_choices
     @nav = "maintenances"
     @title = title
     @description = "Une fenêtre de maintenance"

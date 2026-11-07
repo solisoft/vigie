@@ -2,7 +2,16 @@
 class MonitorsController < AdminController
   # GET /admin/sondes
   def index
-    @monitors = Monitor.order("name").all
+    monitors = []
+    pages = []
+    components = []
+    grouped(fn() {
+      monitors = Monitor.order("name").all
+      pages = StatusPage.order("title").all
+      components = Component.order("position").all
+    })
+    @monitors = monitors
+    @sections = ServiceSetup.sections(pages, components, monitors)
     @nav = "monitors"
     @title = "Sondes"
     @description = "Les sondes HTTP, TLS et heartbeat"
@@ -32,7 +41,12 @@ class MonitorsController < AdminController
     return @_render_form("new", "Nouvelle sonde") if @monitor._errors
 
     flash("notice", "Sonde « #{this.monitor.name} » créée : premier contrôle dans quelques secondes.")
-    redirect("/admin/sondes/#{this.monitor._key}")
+    service = Component.find_by("_key", params["composant"].to_s) unless params["composant"].blank?
+    return redirect("/admin/sondes/#{this.monitor._key}") if service.nil?
+
+    service.monitor_ids = service.monitor_ids + [@monitor._key]
+    service.save
+    redirect("/admin/composants/#{service._key}")
   end
 
   # GET /admin/sondes/:id — state, uptime, last checks
@@ -84,11 +98,10 @@ class MonitorsController < AdminController
     redirect("/admin/sondes/#{this.monitor._key}")
   end
 
-  # DELETE /admin/sondes/:id — the monitor and its raw checks
+  # DELETE /admin/sondes/:id — the monitor, its history, its place on services
   def destroy
     monitor = Monitor.find(params["id"])
-    Check.where({"monitor_id": monitor._key}).delete_all
-    monitor.delete
+    monitor.remove_with_history
     flash("notice", "Sonde supprimée.")
     redirect("/admin/sondes")
   end
@@ -132,6 +145,7 @@ class MonitorsController < AdminController
   end
 
   def _form_page(title)
+    @service_key = params["composant"].to_s
     @nav = "monitors"
     @title = title
     @description = "Configuration d'une sonde"

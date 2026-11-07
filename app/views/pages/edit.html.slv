@@ -12,34 +12,41 @@
 </section>
 
 <section class="panel">
-  <div class="panel-head"><h2>Composants</h2><span class="faint">badge : /badge/&lt;nom&gt;.svg</span></div>
-  <% if @components.length == 0 %>
-    <div class="panel-body"><p class="empty">Aucun composant : la page est vide.</p></div>
+  <div class="panel-head"><h2>Services</h2><span class="faint">une ligne de la page publique chacun · badge : /badge/&lt;nom&gt;.svg</span></div>
+  <% if @services.length == 0 %>
+    <div class="panel-body"><p class="empty">Aucun service : la page est vide. Ajoutez le premier ci-dessous.</p></div>
   <% else %>
-    <table class="ledger">
-      <thead><tr><th scope="col">Composant</th><th scope="col">Groupe</th><th scope="col">Sondes</th><th scope="col">Badge</th></tr></thead>
-      <tbody>
-        <% @components.each do |item| %>
-          <tr>
-            <td><a href="/admin/composants/<%= item._key %>"><%= item.name %></a></td>
-            <td><%= item.group_name %></td>
-            <td><%= item.monitor_ids.map { |id| @monitor_names[id]&.name ?? "?" }.join(", ") %></td>
-            <td><img src="/badge/<%= item.slug %>.svg" alt="Badge de <%= item.name %>" height="20"></td>
-          </tr>
-        <% end %>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table class="ledger">
+        <thead><tr><th scope="col">Service</th><th scope="col">Groupe</th><th scope="col">État</th><th scope="col" class="num">Sondes</th><th scope="col" class="hide-sm">Badge</th></tr></thead>
+        <tbody>
+          <% for service in @services %>
+            <tr>
+              <td><a href="/admin/composants/<%= service["component"]._key %>"><%= service["component"].name %></a><% if service["address"].present? %><span class="target"><%= service["address"] %></span><% end %></td>
+              <td><%= service["component"].group_name %></td>
+              <td><span class="chip s-<%= service["status"] %>"><%- status_icon(service["status"]) %><%= status_text(service["status"]) %></span></td>
+              <td class="num"><%= service["monitors"] %></td>
+              <td class="hide-sm"><img src="/badge/<%= service["component"].slug %>.svg" alt="Badge de <%= service["component"].name %>" height="20"></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
   <% end %>
   <div class="panel-body">
     <form class="form" action="/admin/pages/<%= @page._key %>/composants" method="POST">
       <%- csrf_field() %>
+      <h3 class="form-title">Ajouter un service</h3>
       <div class="row">
-        <div><label for="component_name">Nouveau composant</label><input id="component_name" type="text" name="name" required></div>
-        <div><label for="component_group">Groupe</label><input id="component_group" type="text" name="group_name" placeholder="Web, API…"></div>
-        <div><label for="component_position">Ordre</label><input id="component_position" type="number" name="position" value="<%= @components.length %>"></div>
+        <div><label for="service_name">Nom</label><input id="service_name" type="text" name="name" required maxlength="80" placeholder="Site web"></div>
+        <div><label for="service_url">Adresse</label><input id="service_url" type="url" name="url" required inputmode="url" placeholder="https://exemple.fr"></div>
       </div>
-      <%- partial("shared/monitor_choices", {"choices": @monitor_choices, "selected": []}) %>
-      <div class="form-actions"><button type="submit">Ajouter le composant</button></div>
+      <div class="row">
+        <div><label for="service_group">Groupe</label><input id="service_group" type="text" name="group_name" placeholder="Web, API…"></div>
+        <div><label for="service_position">Ordre</label><input id="service_position" type="number" name="position" value="<%= @services.length %>"></div>
+      </div>
+      <p class="hint">Vigie sonde l'adresse chaque minute et, en https, surveille aussi son certificat. Un heartbeat s'ajoute ensuite depuis la fiche du service.</p>
+      <div class="form-actions"><button type="submit">Ajouter le service</button></div>
     </form>
   </div>
 </section>

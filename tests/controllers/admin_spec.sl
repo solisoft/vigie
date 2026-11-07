@@ -327,8 +327,7 @@ describe("Admin pages and components") do
     admin_reset()
   end
 
-  test("creates a page, adds a component, renames it, removes it") do
-    monitor = Monitor.create({"name": "API", "url": "https://api.example.com"})
+  test("creates a page, then a service from a name and an address") do
     assert_eq(res_status(get("/admin/pages/nouvelle")), 200)
     response = post(
       "/admin/pages",
@@ -352,36 +351,191 @@ describe("Admin pages and components") do
       }
     )
     assert_eq(StatusPage.find(page._key).listed, true)
-    post(
+    added = post(
       "/admin/pages/#{page._key}/composants",
       {
         "name": "API publique",
+        "url": "https://api.example.com/sante",
         "group_name": "Plateforme",
-        "position": "1",
-        "monitor_ids": [monitor._key]
+        "position": "1"
       }
     )
     component = Component.find_by("slug", "api-publique")
-    assert_eq(component.monitor_ids, [monitor._key])
+    assert_eq(res_location(added), "/admin/composants/#{component._key}")
     assert_eq(component.position, 1)
+    assert_eq(component.group_name, "Plateforme")
+    http = Monitor.find_by("name", "API publique")
+    certificate = Monitor.find_by("name", "Certificat api.example.com")
+    assert_eq(http.url, "https://api.example.com/sante")
+    assert_eq(http.interval_s, 60)
+    assert_eq(certificate.kind, "tls")
+    assert_eq(certificate.host, "api.example.com")
+    assert_eq(component.monitor_ids, [http._key, certificate._key])
     body = res_body(get("/admin/pages/#{page._key}"))
     assert_contains(body, "API publique")
+    assert_contains(body, "https://api.example.com/sante")
     assert_contains(body, "/badge/api-publique.svg")
-    assert_eq(res_status(get("/admin/composants/#{component._key}")), 200)
+    component_page = res_body(get("/admin/composants/#{component._key}"))
+    assert_contains(component_page, "Sondes de ce service")
+    assert_contains(component_page, "Certificat api.example.com")
+    assert_contains(component_page, "composant=#{component._key}")
+  end
+
+  test("refuses a service without a name, without an address or with a bad one, and writes nothing") do
+    page = StatusPage.create({"title": "Une", "slug": "une"})
+    [
+      {"name": "", "url": "https://api.example.com"},
+      {"name": "API", "url": ""},
+      {"name": "API", "url": "ftp://api.example.com"}
+    ].each do |form|
+      response = post("/admin/pages/#{page._key}/composants", form)
+      assert_eq(res_location(response), "/admin/pages/#{page._key}")
+      assert_eq(Component.count, 0)
+      assert_eq(Monitor.count, 0)
+    end
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "API", "url": "https://api.example.com"}
+    )
+    monitors_before = Monitor.count
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "API", "url": "https://autre.example.com"}
+    )
+    assert_eq(Component.count, 1, "a second service with the same name is refused")
+    assert_eq(Monitor.count, monitors_before)
+  end
+
+  test("two services on one host share its certificate monitor; plain http has none") do
+    page = StatusPage.create({"title": "Une", "slug": "une"})
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "Site", "url": "https://acme.example.com/"}
+    )
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "Boutique", "url": "https://acme.example.com/shop"}
+    )
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "Intranet", "url": "http://intranet.example.com/"}
+    )
+    assert_eq(Monitor.where({"kind": "tls"}).count, 1)
+    certificate = Monitor.find_by("kind", "tls")
+    assert_contains(Component.find_by("slug", "site").monitor_ids, certificate._key)
+    assert_contains(Component.find_by("slug", "boutique").monitor_ids, certificate._key)
+    assert_eq(Component.find_by("slug", "intranet").monitor_ids.length, 1)
+    assert_eq(
+      ServiceSetup.tls_endpoint("https://user@acme.example.com:8443/x?y"),
+      {"host": "acme.example.com", "port": 8443}
+    )
+    assert_null(ServiceSetup.tls_endpoint("http://acme.example.com"))
+  end
+
+  test("renames a service, detaches and attaches monitors, adds a heartbeat to it") do
+    page = StatusPage.create({"title": "Une", "slug": "une"})
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "API", "url": "https://api.example.com"}
+    )
+    component = Component.find_by("slug", "api")
+    http = Monitor.find_by("name", "API")
+    certificate = Monitor.find_by("kind", "tls")
     patch(
       "/admin/composants/#{component._key}",
       {
         "name": "API v2",
         "group_name": "Plateforme",
-        "position": "2",
-        "monitor_ids": [monitor._key]
+        "position": "2"
       }
     )
-    assert_eq(Component.find(component._key).name, "API v2")
-    assert_eq(Component.find(component._key).slug, "api-v2")
-    delete("/admin/composants/#{component._key}")
-    assert_eq(Component.count, 0)
-    assert_contains(res_body(get("/admin/pages")), "Statut Acme")
+    renamed = Component.find(component._key)
+    assert_eq(renamed.slug, "api-v2")
+    assert_eq(renamed.monitor_ids, [http._key, certificate._key], "saving the display keeps the monitors")
+    delete("/admin/composants/#{component._key}/sondes/#{certificate._key}")
+    assert_eq(Component.find(component._key).monitor_ids, [http._key])
+    assert_not_null(Monitor.find_by("kind", "tls"), "a detached monitor keeps running")
+    post("/admin/composants/#{component._key}/sondes", {"monitor_id": certificate._key})
+    post("/admin/composants/#{component._key}/sondes", {"monitor_id": certificate._key})
+    assert_eq(Component.find(component._key).monitor_ids, [http._key, certificate._key], "attached once")
+    assert_eq(res_status(post("/admin/composants/#{component._key}/sondes", {"monitor_id": "nope"})), 404)
+    form = res_body(get("/admin/sondes/nouvelle?kind=heartbeat&composant=#{component._key}"))
+    assert_contains(form, "name=\"composant\" value=\"#{component._key}\"")
+    created = post(
+      "/admin/sondes",
+      {
+        "name": "Sauvegarde",
+        "kind": "heartbeat",
+        "interval_s": "3600",
+        "grace_s": "300",
+        "composant": component._key
+      }
+    )
+    heartbeat = Monitor.find_by("name", "Sauvegarde")
+    assert_eq(res_location(created), "/admin/composants/#{component._key}")
+    assert_contains(Component.find(component._key).monitor_ids, heartbeat._key)
+  end
+
+  test("removing a service takes the monitors only it used, and keeps shared ones") do
+    page = StatusPage.create({"title": "Une", "slug": "une"})
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "Site", "url": "https://acme.example.com/"}
+    )
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "Boutique", "url": "https://acme.example.com/shop"}
+    )
+    site = Component.find_by("slug", "site")
+    http = Monitor.find_by("name", "Site")
+    Check.create({
+      "monitor_id": http._key,
+      "at": DateTime.utc.to_unix,
+      "status": "up",
+      "ok": true
+    })
+    DailyRollup.create({
+      "monitor_id": http._key,
+      "day": Checker.day_of(DateTime.utc.to_unix),
+      "total": 1,
+      "up": 1
+    })
+    delete("/admin/composants/#{site._key}")
+    assert_null(Component.find_by("slug", "site"))
+    assert_null(Monitor.find_by("name", "Site"))
+    assert_eq(Check.where({"monitor_id": http._key}).count, 0)
+    assert_eq(DailyRollup.where({"monitor_id": http._key}).count, 0)
+    assert_not_null(Monitor.find_by("kind", "tls"), "the certificate is still used by Boutique")
+    assert_eq(Component.find_by("slug", "boutique").monitor_ids.length, 2)
+  end
+
+  test("deleting a monitor takes it off its services") do
+    page = StatusPage.create({"title": "Une", "slug": "une"})
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "API", "url": "https://api.example.com"}
+    )
+    certificate = Monitor.find_by("kind", "tls")
+    delete("/admin/sondes/#{certificate._key}")
+    assert_eq(Component.find_by("slug", "api").monitor_ids, [Monitor.find_by("name", "API")._key])
+  end
+
+  test("lists monitors page by page and service by service, then those on no page") do
+    page = StatusPage.create({"title": "Acme", "slug": "acme"})
+    post(
+      "/admin/pages/#{page._key}/composants",
+      {"name": "API", "url": "https://api.example.com"}
+    )
+    Monitor.create({"name": "Orpheline", "url": "https://orphan.example.com"})
+    get("/admin/sondes")
+    sections = assigns()["sections"]
+    assert_eq(sections.map(&{ |section|
+      section["title"]
+    }), ["Acme", "Sur aucune page"])
+    assert_eq(sections[0]["rows"].length, 2)
+    assert_eq(sections[0]["rows"][0]["first"], true)
+    assert_eq(sections[0]["rows"][1]["first"], false)
+    assert_eq(sections[1]["rows"][0]["monitor"]["name"], "Orpheline")
   end
 
   test("refuses a duplicate slug on create and on update, and a bad logo URL") do
@@ -450,7 +604,9 @@ describe("Admin incidents") do
       "kind": "webhook",
       "target": "https://hooks.example.com/x"
     })
-    assert_eq(res_status(get("/admin/incidents/nouveau")), 200)
+    incident_form = get("/admin/incidents/nouveau")
+    assert_eq(res_status(incident_form), 200)
+    assert_contains(res_body(incident_form), "affiche sur les services de la page publique")
     response = post(
       "/admin/incidents",
       {
@@ -523,7 +679,9 @@ describe("Admin maintenances") do
 
   test("plans, edits and deletes a window in UTC") do
     monitor = Monitor.create({"name": "API", "url": "https://api.example.com"})
-    assert_eq(res_status(get("/admin/maintenances/nouvelle")), 200)
+    maintenance_form = get("/admin/maintenances/nouvelle")
+    assert_eq(res_status(maintenance_form), 200)
+    assert_contains(res_body(maintenance_form), "Services concernés")
     post(
       "/admin/maintenances",
       {
@@ -550,6 +708,35 @@ describe("Admin maintenances") do
       }
     )
     assert_eq(Maintenance.find(window._key).title, "Bascule 2")
+    page = StatusPage.create({"title": "Acme", "slug": "acme"})
+    service = Component.create({
+      "page_id": page._key,
+      "name": "Site",
+      "monitor_ids": [monitor._key]
+    })
+    second = Monitor.create({
+      "name": "Certificat",
+      "kind": "tls",
+      "host": "api.example.com"
+    })
+    service.monitor_ids = [monitor._key, second._key]
+    service.save
+    patch(
+      "/admin/maintenances/#{window._key}",
+      {
+        "title": "Bascule 2",
+        "starts_at_local": "2030-01-02T03:00",
+        "ends_at_local": "2030-01-02T05:00",
+        "monitor_ids": ["#{monitor._key},#{second._key}", monitor._key]
+      }
+    )
+    assert_eq(
+      Maintenance.find(window._key).monitor_ids,
+      [monitor._key, second._key],
+      "a service box stands for its monitors"
+    )
+    ticked = res_body(get("/admin/maintenances/#{window._key}"))
+    assert_contains(ticked, "value=\"#{monitor._key},#{second._key}\" checked")
     bad = patch(
       "/admin/maintenances/#{window._key}",
       {

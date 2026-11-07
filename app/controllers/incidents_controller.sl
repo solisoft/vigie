@@ -109,7 +109,7 @@ class IncidentsController < AdminController
   private
 
   def _form_page
-    @monitor_choices = @_monitor_choices
+    @monitor_choices = @_service_choices
     @statuses = [
       ["Enquête en cours", "investigating"],
       ["Identifié", "identified"],

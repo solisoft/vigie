@@ -79,10 +79,12 @@ class PagesController < AdminController
     @nav = "pages"
     @title = title
     @description = "Réglages d'une page de statut"
-    @components = @page._key.nil? ? [] : @page.components
-    @monitor_choices = @_monitor_choices
-    @monitor_names = @monitor_choices.index_by("id")
-    @component = Component.new({"position": @components.length})
+    components = @page._key.nil? ? [] : @page.components
+    monitor_ids = components.map(&:monitor_ids).flatten.uniq
+    monitors = Monitor.where("doc._key IN @ids", {"ids": monitor_ids}).all.index_by("_key")
+    @services = components.map do |component|
+      ServiceSetup.row(component, monitors)
+    end
   end
 
   def _render_form(view, title)

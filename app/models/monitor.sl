@@ -74,6 +74,26 @@ class Monitor < Model
     }
   end
 
+  # Deletes the monitor with its checks and daily rollups, and takes it off
+  # the services (components) that showed it.
+  def remove_with_history
+    key = @_key
+    Check.where({"monitor_id": key}).delete_all
+    DailyRollup.where({"monitor_id": key}).delete_all
+    Component.where("@id IN doc.monitor_ids", {"id": key}).all.each do |component|
+      component.monitor_ids = component.monitor_ids.filter do |id|
+        id != key
+      end
+      component.save
+    end
+    @delete
+  end
+
+  # The services (components) a monitor stands behind.
+  def components
+    Component.where("@id IN doc.monitor_ids", {"id": @_key}).all
+  end
+
   static def active
     Monitor.where({"paused": false}).order("name").all
   end

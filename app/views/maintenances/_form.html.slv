@@ -6,6 +6,11 @@
     <div><label for="starts_at_local">Début (UTC)</label><input id="starts_at_local" type="datetime-local" name="starts_at_local" value="<%= starts_local %>" required><%- f.errors_for("starts_at") %></div>
     <div><label for="ends_at_local">Fin (UTC)</label><input id="ends_at_local" type="datetime-local" name="ends_at_local" value="<%= ends_local %>" required><%- f.errors_for("ends_at") %></div>
   </div>
-  <%- partial("shared/monitor_choices", {"choices": choices, "selected": maintenance.monitor_ids ?? []}) %>
+  <%- partial("shared/monitor_choices", {
+    "choices": choices,
+    "selected": maintenance.monitor_ids ?? [],
+    "legend": "Services concernés",
+    "hint": "Pendant la fenêtre : ni incident ni alerte, et ces contrôles hors disponibilité."
+  }) %>
   <div class="form-actions"><%- f.submit("Enregistrer") %><a href="/admin/maintenances">Annuler</a></div>
 <%- end -%>

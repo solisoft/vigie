@@ -1,9 +1,14 @@
 <fieldset>
-  <legend>Sondes derrière ce composant</legend>
-  <% if choices.length == 0 %><p class="hint">Aucune sonde : <a href="/admin/sondes/nouvelle">créez-en une</a>.</p><% end %>
-  <div class="choices">
-    <% choices.each do |choice| %>
-      <label class="check"><input type="checkbox" name="monitor_ids[]" value="<%= choice["id"] %>" <%- selected.includes?(choice["id"]) ? "checked" : "" %>> <%= choice["name"] %> <span class="faint">· <%= choice["kind"] %></span></label>
-    <% end %>
-  </div>
+  <legend><%= legend %></legend>
+  <% if hint.present? %><p class="hint"><%= hint %></p><% end %>
+  <% if choices.length == 0 %><p class="hint">Aucun service : ajoutez-en un à une <a href="/admin/pages">page de statut</a>.</p><% end %>
+  <% for section in choices %>
+    <p class="choices-title"><%= section["title"] %></p>
+    <div class="choices">
+      <% for item in section["items"] %>
+        <% ticked = item["ids"].all? { |id| selected.includes?(id) } %>
+        <label class="check"><input type="checkbox" name="monitor_ids[]" value="<%= item["value"] %>" <%- ticked ? "checked" : "" %>> <%= item["label"] %> <span class="faint">· <%= item["detail"] %></span></label>
+      <% end %>
+    </div>
+  <% end %>
 </fieldset>

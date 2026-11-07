@@ -489,3 +489,14 @@ a:hover { color: var(--beam); }
 @media (max-width: 680px) {
   .install-grid { grid-template-columns: 1fr; }
 }
+
+/* Admin: services */
+.form-title { margin: 0; font: 600 1.05rem/1.2 var(--font-display); }
+.attach-row { display: grid; gap: 10px; }
+.attach-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; max-width: none; }
+.attach-form > div:first-of-type { flex: 1 1 280px; }
+.attach-row .hint { margin: 0; font-size: .85rem; color: var(--ink-soft); }
+.ledger td.ghost form { margin: 0; }
+.ledger td.ghost button { padding: 5px 10px; font-size: .8rem; }
+.service-group th { padding-top: 18px; font: 600 .95rem/1.2 var(--font-display); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.choices-title { margin: 12px 0 4px; font-weight: 600; font-size: .85rem; color: var(--ink-soft); }

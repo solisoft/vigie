@@ -1,25 +1,29 @@
 <header class="desk-head">
-  <div><h1>Sondes</h1><p><%= @monitors.length %> sonde(s)</p></div>
-  <div class="actions"><a class="button" href="/admin/sondes/nouvelle">Nouvelle sonde</a></div>
+  <div><h1>Sondes</h1><p><%= @monitors.length %> sonde(s), rangées par page et par service. Pour surveiller un nouveau site, ajoutez un service à une page.</p></div>
+  <div class="actions"><a class="button ghost" href="/admin/sondes/nouvelle">Nouvelle sonde seule</a></div>
 </header>
 <section class="panel">
   <% if @monitors.length == 0 %>
-    <div class="panel-body"><p class="empty">Aucune sonde. Commencez par surveiller votre page d'accueil.</p></div>
+    <div class="panel-body"><p class="empty">Aucune sonde. Ajoutez un service à une <a href="/admin/pages">page de statut</a> : Vigie crée ses sondes.</p></div>
   <% else %>
     <div class="table-wrap">
       <table class="ledger">
-        <thead><tr><th scope="col">Sonde</th><th scope="col">Type</th><th scope="col">État</th><th scope="col" class="hide-sm">Intervalle</th><th scope="col" class="hide-sm">Dernier contrôle</th></tr></thead>
-        <tbody>
-          <% @monitors.each do |monitor| %>
-            <tr>
-              <td><a href="/admin/sondes/<%= monitor._key %>"><%= monitor.name %></a><span class="target"><%= monitor.target_label %></span></td>
-              <td><%= monitor.kind_label %></td>
-              <td><span class="chip s-<%= monitor.paused ? "paused" : monitor.status %>"><%- status_icon(monitor.paused ? "paused" : monitor.status) %><%= status_text(monitor.paused ? "paused" : monitor.status) %></span></td>
-              <td class="num hide-sm"><%= monitor.interval_s %> s</td>
-              <td class="hide-sm"><%= french_time(monitor.last_checked_at) %></td>
-            </tr>
-          <% end %>
-        </tbody>
+        <thead><tr><th scope="col">Service</th><th scope="col">Sonde</th><th scope="col">Type</th><th scope="col">État</th><th scope="col" class="hide-sm">Dernier contrôle</th></tr></thead>
+        <% for section in @sections %>
+          <tbody>
+            <tr class="service-group"><th scope="rowgroup" colspan="5"><%= section["title"] %></th></tr>
+            <% for row in section["rows"] %>
+              <% monitor = row["monitor"] %>
+              <tr>
+                <td><% if row["first"] && !row["component"].nil? %><a href="/admin/composants/<%= row["component"]._key %>"><%= row["component"].name %></a><% end %></td>
+                <td><a href="/admin/sondes/<%= monitor._key %>"><%= monitor.name %></a><span class="target"><%= monitor.target_label %></span></td>
+                <td><%= monitor.kind_label %></td>
+                <td><span class="chip s-<%= monitor.paused ? "paused" : monitor.status %>"><%- status_icon(monitor.paused ? "paused" : monitor.status) %><%= status_text(monitor.paused ? "paused" : monitor.status) %></span></td>
+                <td class="hide-sm"><%= french_time(monitor.last_checked_at) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        <% end %>
       </table>
     </div>
   <% end %>

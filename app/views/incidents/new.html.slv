@@ -8,7 +8,12 @@
       <div><%- f.label("impact", "Impact") %><%- f.select("impact", @impacts) %></div>
     </div>
     <div><label for="message">Premier message</label><textarea id="message" name="message" placeholder="Nous analysons des lenteurs…"></textarea></div>
-    <%- partial("shared/monitor_choices", {"choices": @monitor_choices, "selected": @incident.monitor_ids ?? []}) %>
+    <%- partial("shared/monitor_choices", {
+      "choices": @monitor_choices,
+      "selected": @incident.monitor_ids ?? [],
+      "legend": "Services concernés",
+      "hint": "L'incident s'affiche sur les services de la page publique qui utilisent ces sondes."
+    }) %>
     <%- f.errors_for("monitor_ids") %>
     <div class="form-actions"><%- f.submit("Publier") %><a href="/admin/incidents">Annuler</a></div>
   <%- end -%>

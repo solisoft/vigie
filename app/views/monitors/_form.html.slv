@@ -1,5 +1,6 @@
 <%- form_with(monitor, {"url": url, "class": "form", "data-kind-form": true}) do |f| -%>
   <%- f.error_summary() %>
+  <% if @service_key.present? %><input type="hidden" name="composant" value="<%= @service_key %>"><% end %>
   <div class="row">
     <div>
       <%- f.label("name", "Nom") %>
