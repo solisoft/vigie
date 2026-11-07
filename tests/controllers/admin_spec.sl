@@ -231,6 +231,39 @@ describe("Admin dashboard and monitors") do
     assert_contains(body, "/ping/#{monitor.heartbeat_token}")
   end
 
+  test("lists a lone failure long after it left the latest checks") do
+    monitor = Monitor.create({"name": "Docs", "url": "https://docs.example.com"})
+    now = DateTime.utc.to_unix
+    Check.create({
+      "monitor_id": monitor._key,
+      "at": now - 6 * 3600,
+      "day": Checker.day_of(now - 6 * 3600),
+      "status": "down",
+      "ok": false,
+      "http_status": 502,
+      "error": "HTTP 502 (attendu 200–399)",
+      "maintenance": false
+    })
+    (0 .. 40).each do |i|
+      Check.create({
+        "monitor_id": monitor._key,
+        "at": now - i * 60,
+        "day": Checker.day_of(now - i * 60),
+        "status": "up",
+        "ok": true,
+        "latency_ms": 90,
+        "maintenance": false
+      })
+    end
+    get("/admin/sondes/#{monitor._key}")
+    failures = assigns()["failures"]
+    assert_eq(failures.length, 1)
+    assert_eq(failures[0]["error"], "HTTP 502 (attendu 200–399)")
+    assert_eq(assigns()["checks"].filter(&{ |check|
+      check["status"] != "up"
+    }).length, 0)
+  end
+
   test("shows, edits and deletes a monitor") do
     monitor = Monitor.create({"name": "Blog", "url": "https://blog.example.com"})
     Check.create({
@@ -243,6 +276,7 @@ describe("Admin dashboard and monitors") do
       "maintenance": false
     })
     assert_contains(res_body(get("/admin/sondes")), "Blog")
+    assert_contains(res_body(get("/admin/sondes/#{monitor._key}")), "Aucun contrôle en échec")
     assert_contains(res_body(get("/admin/sondes/#{monitor._key}")), "Derniers contrôles")
     assert_eq(res_status(get("/admin/sondes/#{monitor._key}/modifier")), 200)
     response = patch(

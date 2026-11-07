@@ -8,4 +8,10 @@ class Check < Model
   static def recent_for(monitor_id, limit)
     Check.where({"monitor_id": monitor_id}).order("at", "desc").limit(limit).all
   end
+
+  # The latest checks that were not up (degraded or down), over the whole raw
+  # retention: a lone failure opens no incident and soon leaves recent_for.
+  static def failures_for(monitor_id, limit)
+    Check.where("doc.monitor_id == @id AND doc.status != 'up'", {"id": monitor_id}).order("at", "desc").limit(limit).all
+  end
 end

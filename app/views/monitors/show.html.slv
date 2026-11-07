@@ -37,6 +37,30 @@
 </section>
 
 <section class="panel">
+  <div class="panel-head"><h2>Derniers échecs</h2><span class="faint">contrôles dégradés ou en panne, sur 14 jours</span></div>
+  <% if @failures.length == 0 %>
+    <div class="panel-body"><p class="muted">Aucun contrôle en échec sur la période conservée.</p></div>
+  <% else %>
+    <div class="table-wrap">
+      <table class="ledger">
+        <thead><tr><th scope="col">Quand</th><th scope="col">Résultat</th><th scope="col" class="num">Latence</th><th scope="col" class="num">HTTP</th><th scope="col">Détail</th></tr></thead>
+        <tbody>
+          <% for check in @failures %>
+            <tr>
+              <td><%= french_time(check.at) %><% if check.maintenance %> <span class="faint">(maintenance)</span><% end %></td>
+              <td><span class="chip s-<%= check.status %>"><%- status_icon(check.status) %><%= status_text(check.status) %></span></td>
+              <td class="num"><%= latency_label(check.latency_ms) %></td>
+              <td class="num"><%= check.http_status.to_s %></td>
+              <td><%= check.error.to_s %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+</section>
+
+<section class="panel">
   <div class="panel-head"><h2>Derniers contrôles</h2></div>
   <div class="table-wrap">
     <table class="ledger">

@@ -56,6 +56,7 @@ class MonitorsController < AdminController
       )}
     )
     @checks = Check.recent_for(@monitor._key, 30)
+    @failures = Check.failures_for(@monitor._key, 50)
     @incidents = Incident.touching([@monitor._key], 10)
     @ping_url = "#{Alerts.base_url}/ping/#{this.monitor.heartbeat_token}"
     @nav = "monitors"
