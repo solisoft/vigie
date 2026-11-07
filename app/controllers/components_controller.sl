@@ -18,8 +18,8 @@ class ComponentsController < AdminController
     @page = StatusPage.find(@component.page_id)
     @monitor_choices = @_monitor_choices
     @nav = "pages"
-    @title = "Composant « #{@component.name} »"
-    @description = "Un composant de la page #{@page.title}"
+    @title = "Composant « #{this.component.name} »"
+    @description = "Un composant de la page #{this.page.title}"
   end
 
   # PATCH /admin/composants/:id
@@ -28,17 +28,21 @@ class ComponentsController < AdminController
     @_attributes.each do |field, value|
       @component[field] = value
     end
-    @component.save
+    if Component.name_taken?(@component.name, @component._key)
+      @component._errors = [{"field": "name", "message": "un composant porte déjà ce nom (badge)"}]
+    else
+      @component.save
+    end
     if @component._errors.length > 0
       @page = StatusPage.find(@component.page_id)
       @monitor_choices = @_monitor_choices
       @nav = "pages"
-      @title = "Composant « #{@component.name} »"
+      @title = "Composant « #{this.component.name} »"
       return render("components/edit", {}, {"status": 422})
     end
 
     flash("notice", "Composant enregistré.")
-    redirect("/admin/pages/#{@component.page_id}")
+    redirect("/admin/pages/#{this.component.page_id}")
   end
 
   # DELETE /admin/composants/:id
@@ -52,7 +56,16 @@ class ComponentsController < AdminController
   private
 
   def _attributes
-    attributes = permit(params, {"name": true, "description": true, "group_name": true, "position": true, "monitor_ids": []})
+    attributes = permit(
+      params,
+      {
+        "name": true,
+        "description": true,
+        "group_name": true,
+        "position": true,
+        "monitor_ids": []
+      }
+    )
     attributes["monitor_ids"] = @_selected_ids(params["monitor_ids"])
     attributes["position"] = attributes["position"].to_s.to_i
     attributes

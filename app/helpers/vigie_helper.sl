@@ -9,19 +9,19 @@ end
 def french_time(unix)
   return "—" if unix.nil? || unix.to_i == 0
 
-  moment = DateTime.from_unix(unix.to_i)
-  "#{moment.day} #{french_month(moment.month)} #{moment.year}, #{moment.format("%H:%M")} UTC"
+  "#{french_date(unix)}, #{iso_time(unix).substring(11, 16)} UTC"
 end
 
 def french_date(unix)
   return "—" if unix.nil? || unix.to_i == 0
 
-  moment = DateTime.from_unix(unix.to_i)
-  "#{moment.day} #{french_month(moment.month)} #{moment.year}"
+  parts = iso_time(unix).substring(0, 10).split("-")
+  "#{parts[2].to_i} #{french_month(parts[1].to_i)} #{parts[0]}"
 end
 
+# UTC, from to_iso: DateTime#format renders the server's local time.
 def iso_time(unix)
-  DateTime.from_unix(unix.to_i).format("%Y-%m-%dT%H:%M:%SZ")
+  DateTime.from_unix(unix.to_i).to_iso.substring(0, 19) + "Z"
 end
 
 # 99.95 → "99,95 %"; nil → "—"
@@ -46,30 +46,23 @@ def status_text(status)
     "down" => "Panne",
     "maintenance" => "Maintenance",
     "paused" => "En pause",
-    _ => "En attente"
+    _ => "En attente",
   }
 end
 
 # A small inline SVG per status; aria-hidden because the text says it too.
 def status_icon(status)
-  path = match status {
-    "up" => "<path d=\"M4 8.5l2.5 2.5L12 5.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>",
-    "ok" => "<path d=\"M4 8.5l2.5 2.5L12 5.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>",
-    "degraded" => "<path d=\"M8 4v5M8 11.5v.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
-    "partial" => "<path d=\"M8 4v5M8 11.5v.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
-    "down" => "<path d=\"M5 5l6 6M11 5l-6 6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
-    "major" => "<path d=\"M5 5l6 6M11 5l-6 6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
-    "maintenance" => "<path d=\"M5 11l4-4M9.5 4.5a2 2 0 102 2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"/>",
-    _ => "<path d=\"M8 4.5V8l2 1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"/>"
+  shape = match status {
+    "up" => "M4 8.5l2.5 2.5L12 5.5",
+    "ok" => "M4 8.5l2.5 2.5L12 5.5",
+    "degraded" => "M8 4v5M8 11.5v.5",
+    "partial" => "M8 4v5M8 11.5v.5",
+    "down" => "M5 5l6 6M11 5l-6 6",
+    "major" => "M5 5l6 6M11 5l-6 6",
+    "maintenance" => "M5 11l4-4M9.5 4.5a2 2 0 102 2",
+    _ => "M8 4.5V8l2 1.5",
   }
-  "<svg class=\"icon\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" aria-hidden=\"true\">#{path}</svg>"
-end
-
-def incident_status_text(status)
-  match status {
-    "identified" => "Identifié",
-    "monitoring" => "Sous surveillance",
-    "resolved" => "Résolu",
-    _ => "Enquête en cours"
-  }
+  stroke = "fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\""
+  box = "class=\"icon\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" aria-hidden=\"true\""
+  "<svg #{box}><path d=\"#{shape}\" #{stroke}/></svg>"
 end

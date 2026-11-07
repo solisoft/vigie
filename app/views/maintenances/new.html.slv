@@ -1,4 +1,10 @@
-<header class="desk-head"><div><h1><%= title %></h1><p>Pendant la fenêtre, les sondes choisies n'ouvrent pas d'incident et n'alertent personne.</p></div></header>
+<header class="desk-head">
+  <div>
+    <h1><%= title %></h1>
+    <p>Pendant la fenêtre, les sondes choisies n'ouvrent pas d'incident et n'alertent personne.</p>
+  </div>
+</header>
 <section class="panel"><div class="panel-body">
-  <%- partial("maintenances/form", {"maintenance": @maintenance, "url": "/admin/maintenances", "choices": @monitor_choices, "starts_local": @starts_local, "ends_local": @ends_local}) %>
+  <% form_locals = {"maintenance": @maintenance, "url": "/admin/maintenances", "choices": @monitor_choices} %>
+  <%- partial("maintenances/form", form_locals.merge({"starts_local": @starts_local, "ends_local": @ends_local})) %>
 </div></section>

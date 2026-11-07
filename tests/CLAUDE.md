@@ -486,7 +486,7 @@ point of the model layer is the round-trip with the DB.
 ```bash
 soli test                                 # coverage is on by default (console report)
 soli test --no-coverage                   # turn it off for a fast loop
-soli test --coverage-min 90.0             # fail if total line coverage is < 90%
+soli test --coverage-min 95.0             # fail if total line coverage is < 95%
 soli test --coverage=html                 # also write an HTML report
 soli test --coverage=json,xml             # multiple report formats
 ```
@@ -569,7 +569,7 @@ Before reporting a feature done:
 soli fmt <files-you-changed>              # 1. canonical layout — specs included
 soli lint <files-you-changed>             # 2. style/smell rules
 soli test tests/<relevant_spec>.sl        # 3. narrow, fast feedback
-soli test --coverage-min 90.0 --require-assertions  # 4. full sweep + gates
+soli test --coverage-min 95.0 --require-assertions  # 4. full sweep + gates
 ```
 
 Specs are `.sl` files, so `soli fmt` formats them like any other code — run it

@@ -8,8 +8,16 @@
 # State written by the checker: status, consecutive_failures, last_checked_at,
 # next_check_at, last_latency_ms, last_http_status, last_error,
 # last_heartbeat_at, tls_days_left, tls_not_after.
-const MONITOR_KINDS = ["http", "tls", "heartbeat"]
-const HTTP_METHODS = ["GET", "HEAD", "POST"]
+const MONITOR_KINDS = [
+  "http",
+  "tls",
+  "heartbeat"
+]
+const HTTP_METHODS = [
+  "GET",
+  "HEAD",
+  "POST"
+]
 const MIN_INTERVAL_S = 30
 const MAX_INTERVAL_S = 3600
 
@@ -20,15 +28,15 @@ class Monitor < Model
   def normalize
     @name = @name.to_s.trim
     @kind = "http" if @kind.blank?
-    @interval_s = (@interval_s || 60).to_i
-    @failure_threshold = (@failure_threshold || 2).to_i
-    @timeout_s = (@timeout_s || 10).to_i
+    @interval_s = (@interval_s ?? 60).to_i
+    @failure_threshold = (@failure_threshold ?? 2).to_i
+    @timeout_s = (@timeout_s ?? 10).to_i
     @http_method = (@http_method || "GET").to_s.upcase
-    @status_min = (@status_min || 200).to_i
-    @status_max = (@status_max || 399).to_i
-    @port = (@port || 443).to_i
-    @tls_warn_days = (@tls_warn_days || 14).to_i
-    @grace_s = (@grace_s || 60).to_i
+    @status_min = (@status_min ?? 200).to_i
+    @status_max = (@status_max ?? 399).to_i
+    @port = (@port ?? 443).to_i
+    @tls_warn_days = (@tls_warn_days ?? 14).to_i
+    @grace_s = (@grace_s ?? 60).to_i
     @degraded_ms = @degraded_ms.to_i
     @follow_redirects = @follow_redirects != false
     @paused = @paused == true
@@ -44,25 +52,25 @@ class Monitor < Model
 
   # The address a person reads: the URL, host:port, or the ping path.
   def target_label
-    return "#{@host}:#{@port}" if @kind == "tls"
-    return "/ping/#{@heartbeat_token}" if @kind == "heartbeat"
+    return "#{this.host}:#{this.port}" if @kind == "tls"
+    return "/ping/#{this.heartbeat_token}" if @kind == "heartbeat"
 
     @url
   end
 
   def kind_label
-    Monitor.kind_label(@kind)
+    Monitor.label_for_kind(@kind)
   end
 
   def due?(now)
     !@paused && @next_check_at.to_i <= now
   end
 
-  static def kind_label(kind)
+  static def label_for_kind(kind)
     match kind {
       "tls" => "Certificat TLS",
       "heartbeat" => "Heartbeat",
-      _ => "HTTP(S)"
+      _ => "HTTP(S)",
     }
   end
 
@@ -73,8 +81,24 @@ class Monitor < Model
   # Form values arrive as strings: convert them before validation.
   static def from_form(attributes)
     cleaned = attributes.merge({})
-    ["interval_s", "failure_threshold", "timeout_s", "status_min", "status_max", "port", "tls_warn_days", "grace_s", "degraded_ms"].each do |field|
-      cleaned[field] = cleaned[field].to_s.trim.to_i if cleaned.has_key(field) && cleaned[field].to_s.trim.present?
+    [
+      "interval_s",
+      "failure_threshold",
+      "timeout_s",
+      "status_min",
+      "status_max",
+      "port",
+      "tls_warn_days",
+      "grace_s",
+      "degraded_ms"
+    ].each do |field|
+      next unless cleaned.has_key(field)
+
+      if cleaned[field].to_s.trim.present?
+        cleaned[field] = cleaned[field].to_s.trim.to_i
+      else
+        cleaned.delete(field)
+      end
     end
     cleaned["follow_redirects"] = cleaned["follow_redirects"].to_s == "true"
     cleaned["paused"] = cleaned["paused"].to_s == "true"
@@ -86,15 +110,23 @@ class Monitor < Model
   def _validate
     @normalize
     errors = []
-    errors.push({"field": "name", "message": "est obligatoire"}) if @name.to_s.trim.blank?
-    errors.push({"field": "name", "message": "80 caractères au plus"}) if @name.to_s.length > 80
-    errors.push({"field": "kind", "message": "type inconnu"}) unless MONITOR_KINDS.includes?(@kind.to_s)
+    if @name.to_s.trim.blank?
+      errors.push({"field": "name", "message": "est obligatoire"})
+    end
+    if @name.to_s.length > 80
+      errors.push({"field": "name", "message": "80 caractères au plus"})
+    end
+    unless MONITOR_KINDS.includes?(@kind.to_s)
+      errors.push({"field": "kind", "message": "type inconnu"})
+    end
     interval = @interval_s.to_i
     if interval < MIN_INTERVAL_S || interval > MAX_INTERVAL_S
       errors.push({"field": "interval_s", "message": "entre 30 s et 1 h (3600 s)"})
     end
     threshold = @failure_threshold.to_i
-    errors.push({"field": "failure_threshold", "message": "entre 1 et 10"}) if threshold < 1 || threshold > 10
+    if threshold < 1 || threshold > 10
+      errors.push({"field": "failure_threshold", "message": "entre 1 et 10"})
+    end
     errors = errors + @_kind_errors
     @_errors = (@_errors ?? []) + errors
     true
@@ -110,22 +142,34 @@ class Monitor < Model
   def _http_errors
     errors = []
     refusal = TargetGuard.url_refusal(@url.to_s.trim, TargetGuard.allow_private?)
-    errors.push({"field": "url", "message": refusal}) unless refusal.nil?
-    errors.push({"field": "http_method", "message": "GET, HEAD ou POST"}) unless HTTP_METHODS.includes?(@http_method.to_s.upcase)
+    unless refusal.nil?
+      errors.push({"field": "url", "message": refusal})
+    end
+    unless HTTP_METHODS.includes?(@http_method.to_s.upcase)
+      errors.push({"field": "http_method", "message": "GET, HEAD ou POST"})
+    end
     timeout = @timeout_s.to_i
-    errors.push({"field": "timeout_s", "message": "entre 1 et 60 s"}) if timeout < 1 || timeout > 60
+    if timeout < 1 || timeout > 60
+      errors.push({"field": "timeout_s", "message": "entre 1 et 60 s"})
+    end
     low = @status_min.to_i
     high = @status_max.to_i
-    errors.push({"field": "status_max", "message": "plage de statuts invalide"}) if low < 100 || high > 599 || low > high
+    if low < 100 || high > 599 || low > high
+      errors.push({"field": "status_max", "message": "plage de statuts invalide"})
+    end
     errors
   end
 
   def _tls_errors
     errors = []
     refusal = TargetGuard.host_refusal(@host.to_s.trim.downcase, TargetGuard.allow_private?)
-    errors.push({"field": "host", "message": refusal}) unless refusal.nil?
+    unless refusal.nil?
+      errors.push({"field": "host", "message": refusal})
+    end
     port = @port.to_i
-    errors.push({"field": "port", "message": "port invalide"}) if port < 1 || port > 65535
+    if port < 1 || port > 65535
+      errors.push({"field": "port", "message": "port invalide"})
+    end
     errors
   end
 end

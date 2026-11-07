@@ -3,14 +3,24 @@
 class DashboardBoard
   static def build(now)
     monitors = Monitor.order("name").all
-    ids = monitors.map { |monitor| monitor._key }
+    ids = monitors.map do |monitor|
+      monitor._key
+    end
     today = Checker.day_of(now)
-    maintenance_ids = Maintenance.active_at(now).map { |window| window.monitor_ids }.flatten.uniq
+    maintenance_ids = Maintenance.active_at(now).map do |window|
+      window.monitor_ids
+    end.flatten.uniq
     last_day = Uptime.last_day(ids, now)
     windows = Uptime.windows(ids, today)
     recent = Sparkline.recent(ids, now, 6)
     rows = monitors.map do |monitor|
-      DashboardBoard.row(monitor, maintenance_ids, last_day[monitor._key] ?? {}, windows[monitor._key] ?? {}, recent[monitor._key] ?? [])
+      DashboardBoard.row(
+        monitor,
+        maintenance_ids,
+        last_day[monitor._key] ?? {},
+        windows[monitor._key] ?? {},
+        recent[monitor._key] ?? []
+      )
     end
     {
       "rows": rows,
@@ -47,7 +57,12 @@ class DashboardBoard
   end
 
   static def counts(rows)
-    tally = {"up": 0, "degraded": 0, "down": 0, "other": 0}
+    tally = {
+      "up": 0,
+      "degraded": 0,
+      "down": 0,
+      "other": 0
+    }
     rows.each do |row|
       bucket = ["up", "degraded", "down"].includes?(row["status"]) ? row["status"] : "other"
       tally[bucket] = tally[bucket] + 1

@@ -15,7 +15,7 @@ automatically when you work in those directories. Shared model mixins
 1. `soli fmt <files-you-changed>` — canonical layout, before you read your own diff.
 2. `soli lint <files-you-changed>` — naming, smells, undefined-locals.
 3. `soli test tests/<the-relevant-spec>.sl` — narrow, fast feedback.
-4. `soli test --coverage --coverage-min 90.0` — full sweep before handing off.
+4. `soli test --coverage --coverage-min 95.0` — full sweep before handing off.
 5. `soli serve . --dev`, then hit the route in a browser if you changed a UI/route — confirm 200 and that the page renders.
 
 Run `fmt` before `lint`: the formatter fixes indentation, spacing and line
@@ -697,7 +697,7 @@ end
 
 ```bash
 soli test --coverage                      # generate report
-soli test --coverage --coverage-min 90.0  # fail if under 90%
+soli test --coverage --coverage-min 95.0  # fail if under 95%
 ```
 
 This applies to controllers, models, middleware, helpers, and any new library code. Don't merge a feature whose coverage report is missing or below the threshold — write the tests first if it helps you design the API.
@@ -885,7 +885,7 @@ soli fmt                              # canonical layout, in place
 soli fmt --check                      # CI gate: exit 1 on any unformatted file
 soli lint                             # static analysis
 soli test                             # run all tests in tests/
-soli test --coverage --coverage-min 90.0
+soli test --coverage --coverage-min 95.0
 
 soli routes                           # print the expanded route table
 soli routes -g posts                  # only routes matching "posts"

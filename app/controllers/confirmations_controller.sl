@@ -21,9 +21,9 @@ class ConfirmationsController < Controller
       return render(
         "confirmations/new",
         {
-          "title": "Confirm your email",
+          "title": "Confirmer l'adresse",
           "notice": "",
-          "error": "That confirmation link is invalid or was already used. Enter your email to get a fresh one."
+          "error": "Ce lien est invalide ou déjà utilisé. Saisissez votre adresse pour en recevoir un autre."
         }
       )
     end
@@ -40,8 +40,8 @@ class ConfirmationsController < Controller
     return render(
       "confirmations/new",
       {
-        "title": "Email confirmed",
-        "notice": "Your email address is confirmed. Sign in to continue.",
+        "title": "Adresse confirmée",
+        "notice": "Votre adresse est confirmée. Connectez-vous pour continuer.",
         "error": ""
       }
     )
@@ -52,7 +52,7 @@ class ConfirmationsController < Controller
     render(
       "confirmations/new",
       {
-        "title": "Confirm your email",
+        "title": "Confirmer l'adresse",
         "notice": "",
         "error": ""
       }
@@ -71,8 +71,8 @@ class ConfirmationsController < Controller
     return render(
       "confirmations/new",
       {
-        "title": "Confirm your email",
-        "notice": "If that email needs confirming, a fresh link is on its way.",
+        "title": "Confirmer l'adresse",
+        "notice": "Si cette adresse attend une confirmation, un lien vient de partir.",
         "error": ""
       }
     )

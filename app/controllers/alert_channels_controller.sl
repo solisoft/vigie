@@ -4,13 +4,24 @@ class AlertChannelsController < AdminController
   def index
     @channels = AlertChannel.order("name").all
     @deliveries = AlertDelivery.order("at", "desc").limit(20).all
-    @channel = AlertChannel.new({"kind": "email", "active": true})
+    @channel = AlertChannel.new({
+      "kind": "email",
+      "active": true
+    })
     @_form_page
   end
 
   # POST /admin/alertes
   def create
-    attributes = permit(params, {"name": true, "kind": true, "target": true, "active": true})
+    attributes = permit(
+      params,
+      {
+        "name": true,
+        "kind": true,
+        "target": true,
+        "active": true
+      }
+    )
     attributes["active"] = attributes["active"].to_s == "true"
     @channel = AlertChannel.create(attributes)
     if @channel._errors
@@ -20,7 +31,7 @@ class AlertChannelsController < AdminController
       return render("alert_channels/index", {}, {"status": 422})
     end
 
-    flash("notice", "Canal « #{@channel.name} » ajouté.")
+    flash("notice", "Canal « #{this.channel.name} » ajouté.")
     redirect("/admin/alertes")
   end
 
@@ -34,7 +45,13 @@ class AlertChannelsController < AdminController
   # POST /admin/alertes/:id/test — sends a test alert on this channel only
   def test
     channel = AlertChannel.find(params["id"])
-    Alerts.deliver(channel, "test", {"title": "Vigie vous entend", "monitor": "test", "target": channel.target, "detail": "Ceci est une alerte de test.", "incident_id": nil})
+    Alerts.deliver(channel, "test", {
+      "title": "Vigie vous entend",
+      "monitor": "test",
+      "target": channel.target,
+      "detail": "Ceci est une alerte de test.",
+      "incident_id": nil
+    })
     flash("notice", "Alerte de test envoyée à « #{channel.name} ».")
     redirect("/admin/alertes")
   end

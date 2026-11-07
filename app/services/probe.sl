@@ -11,7 +11,7 @@ class Probe
     match monitor.kind {
       "tls" => Probe.tls(monitor),
       "heartbeat" => Probe.heartbeat(monitor, now),
-      _ => Probe.http(monitor)
+      _ => Probe.http(monitor),
     }
   end
 
@@ -34,25 +34,45 @@ class Probe
       stream = HTTP.stream(monitor.http_method, monitor.url, options)
       status_code = stream.status
       latency_ms = Probe.elapsed_ms(started)
-      keyword_found = Probe.body_contains?(stream, monitor.keyword, started, monitor.timeout_s) if monitor.keyword.present?
+      wanted = monitor.keyword
+      keyword_found = Probe.body_contains?(stream, wanted, started, monitor.timeout_s) if wanted.present?
     catch error
-      return Probe.result("down", Probe.elapsed_ms(started), nil, Probe.describe_error(error.to_s, monitor.timeout_s))
+      return Probe.result(
+        "down",
+        Probe.elapsed_ms(started),
+        nil,
+        Probe.describe_error(error.to_s, monitor.timeout_s)
+      )
     end
     Probe.evaluate_http(monitor, status_code, latency_ms, keyword_found)
   end
 
   static def evaluate_http(monitor, status_code, latency_ms, keyword_found)
     if status_code < monitor.status_min || status_code > monitor.status_max
-      return Probe.result("down", latency_ms, status_code, "HTTP #{status_code} (attendu #{monitor.status_min}–#{monitor.status_max})")
+      return Probe.result(
+        "down",
+        latency_ms,
+        status_code,
+        "HTTP #{status_code} (attendu #{monitor.status_min}–#{monitor.status_max})"
+      )
     end
-    return Probe.result("down", latency_ms, status_code, "Mot-clé « #{monitor.keyword} » absent de la réponse") unless keyword_found
+
+    missing = "Mot-clé « #{monitor.keyword} » absent de la réponse"
+    return Probe.result("down", latency_ms, status_code, missing) unless keyword_found
 
     Probe.speed_verdict(monitor, latency_ms, status_code)
   end
 
   static def speed_verdict(monitor, latency_ms, status_code)
     slow = monitor.degraded_ms.to_i > 0 && latency_ms > monitor.degraded_ms
-    return Probe.result("degraded", latency_ms, status_code, "Lent : #{latency_ms} ms (seuil #{monitor.degraded_ms} ms)") if slow
+    if slow
+      return Probe.result(
+        "degraded",
+        latency_ms,
+        status_code,
+        "Lent : #{latency_ms} ms (seuil #{monitor.degraded_ms} ms)"
+      )
+    end
 
     Probe.result("up", latency_ms, status_code, nil)
   end
@@ -83,7 +103,12 @@ class Probe
     try
       peer = X509.peer_certificate(monitor.host, monitor.port, monitor.timeout_s)
     catch error
-      return Probe.result("down", Probe.elapsed_ms(started), nil, Probe.describe_error(error.to_s, monitor.timeout_s))
+      return Probe.result(
+        "down",
+        Probe.elapsed_ms(started),
+        nil,
+        Probe.describe_error(error.to_s, monitor.timeout_s)
+      )
     end
     Probe.evaluate_tls(monitor, peer, Probe.elapsed_ms(started))
   end
@@ -92,7 +117,12 @@ class Probe
     days_left = peer["days_left"]
     verdict = Probe.result("up", latency_ms, nil, nil)
     if peer["expired"] == true || days_left < 0
-      verdict = Probe.result("down", latency_ms, nil, "Certificat expiré depuis le #{peer["not_after"].to_s.substring(0, 10)}")
+      verdict = Probe.result(
+        "down",
+        latency_ms,
+        nil,
+        "Certificat expiré depuis le #{peer["not_after"].to_s.substring(0, 10)}"
+      )
     elsif days_left < monitor.tls_warn_days
       verdict = Probe.result("degraded", latency_ms, nil, "Le certificat expire dans #{days_left} j")
     end
@@ -130,7 +160,10 @@ class Probe
   # Transport errors, in words an on-call person reads at 3 am.
   static def describe_error(message, timeout_s)
     lowered = message.downcase
-    return "Délai dépassé (#{timeout_s} s)" if lowered.includes?("timed out") || lowered.includes?("timeout") || lowered.includes?("deadline")
+    if lowered.includes?("timed out") || lowered.includes?("timeout") || lowered.includes?("deadline")
+      return "Délai dépassé (#{timeout_s} s)"
+    end
+
     return "Cible refusée (adresse privée)" if lowered.includes?("ssrf")
     return "Résolution DNS impossible" if lowered.includes?("dns") || lowered.includes?("lookup")
     return "Connexion refusée" if lowered.includes?("refused")

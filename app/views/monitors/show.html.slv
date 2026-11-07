@@ -6,7 +6,8 @@
   <div class="actions">
     <%- button_to("Vérifier maintenant", "/admin/sondes/#{@monitor._key}/verifier", {"method": "post"}) %>
     <a class="button ghost" href="/admin/sondes/<%= @monitor._key %>/modifier">Modifier</a>
-    <span class="danger"><%- button_to("Supprimer", "/admin/sondes/#{@monitor._key}", {"method": "delete", "confirm": "Supprimer cette sonde et ses contrôles ?"}) %></span>
+    <% delete_options = {"method": "delete", "confirm": "Supprimer cette sonde et ses contrôles ?"} %>
+    <span class="danger"><%- button_to("Supprimer", "/admin/sondes/#{@monitor._key}", delete_options) %></span>
   </div>
 </header>
 

@@ -18,7 +18,15 @@ class IncidentsController < AdminController
 
   # POST /admin/incidents — a manual incident and its first update
   def create
-    attributes = permit(params, {"title": true, "status": true, "impact": true, "monitor_ids": []})
+    attributes = permit(
+      params,
+      {
+        "title": true,
+        "status": true,
+        "impact": true,
+        "monitor_ids": []
+      }
+    )
     attributes["monitor_ids"] = @_selected_ids(params["monitor_ids"])
     attributes["kind"] = "manual"
     attributes["started_at"] = DateTime.utc.to_unix
@@ -29,11 +37,22 @@ class IncidentsController < AdminController
     end
 
     message = params["message"].to_s.trim
-    IncidentUpdate.create({"incident_id": @incident._key, "status": @incident.status, "message": message.blank? ? "Nous analysons la situation." : message, "at": @incident.started_at})
-    Alerts.dispatch("incident.opened", @incident._key, {"title": @incident.title, "monitor": "déclaration manuelle", "target": "", "detail": message, "incident_id": @incident._key})
+    IncidentUpdate.create({
+      "incident_id": @incident._key,
+      "status": @incident.status,
+      "message": message.blank? ? "Nous analysons la situation." : message,
+      "at": @incident.started_at
+    })
+    Alerts.dispatch("incident.opened", @incident._key, {
+      "title": @incident.title,
+      "monitor": "déclaration manuelle",
+      "target": "",
+      "detail": message,
+      "incident_id": @incident._key
+    })
     sse_broadcast(LIVE_TOPIC, {"incident_id": @incident._key}.to_json, "status")
     flash("notice", "Incident publié.")
-    redirect("/admin/incidents/#{@incident._key}")
+    redirect("/admin/incidents/#{this.incident._key}")
   end
 
   # GET /admin/incidents/:id — the timeline and the form to add to it
@@ -41,7 +60,12 @@ class IncidentsController < AdminController
     @incident = Incident.find(params["id"])
     @updates = @incident.updates
     @monitor_names = @_monitor_choices.index_by("id")
-    @statuses = [["Enquête en cours", "investigating"], ["Identifié", "identified"], ["Sous surveillance", "monitoring"], ["Résolu", "resolved"]]
+    @statuses = [
+      ["Enquête en cours", "investigating"],
+      ["Identifié", "identified"],
+      ["Sous surveillance", "monitoring"],
+      ["Résolu", "resolved"]
+    ]
     @nav = "incidents"
     @title = @incident.title
     @description = @incident.status_label
@@ -60,7 +84,13 @@ class IncidentsController < AdminController
     was_open = incident.open?
     incident.post_update(status, message, DateTime.utc.to_unix)
     if was_open && status == "resolved"
-      Alerts.dispatch("incident.resolved", incident._key, {"title": incident.title, "monitor": "déclaration manuelle", "target": "", "detail": message, "incident_id": incident._key})
+      Alerts.dispatch("incident.resolved", incident._key, {
+        "title": incident.title,
+        "monitor": "déclaration manuelle",
+        "target": "",
+        "detail": message,
+        "incident_id": incident._key
+      })
     end
     sse_broadcast(LIVE_TOPIC, {"incident_id": incident._key}.to_json, "status")
     flash("notice", "Suivi publié.")
@@ -80,7 +110,11 @@ class IncidentsController < AdminController
 
   def _form_page
     @monitor_choices = @_monitor_choices
-    @statuses = [["Enquête en cours", "investigating"], ["Identifié", "identified"], ["Sous surveillance", "monitoring"]]
+    @statuses = [
+      ["Enquête en cours", "investigating"],
+      ["Identifié", "identified"],
+      ["Sous surveillance", "monitoring"]
+    ]
     @impacts = [["Dégradation", "degraded"], ["Panne", "outage"]]
     @nav = "incidents"
     @title = "Déclarer un incident"

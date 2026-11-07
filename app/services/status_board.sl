@@ -2,55 +2,94 @@
 # their live status and 90-day bars, the overall banner, open incidents,
 # maintenance, history. The HTML page, the JSON API and the badges all read
 # this, so they never disagree.
-const STATUS_SEVERITY = {"down": 4, "degraded": 3, "maintenance": 2, "up": 1, "pending": 0}
+const STATUS_SEVERITY = {
+  "down": 4,
+  "degraded": 3,
+  "maintenance": 2,
+  "up": 1,
+  "pending": 0
+}
 const HISTORY_DAYS = 90
 
 class StatusBoard
   static def build(page, now)
     components = page.components
-    monitor_ids = components.map { |component| component.monitor_ids }.flatten.uniq
+    monitor_ids = components.map do |component|
+      component.monitor_ids
+    end.flatten.uniq
     monitors = []
     maintenances = []
     open_incidents = []
     history = []
     grouped(fn() {
       monitors = Monitor.where("doc._key IN @ids", {"ids": monitor_ids}).all
-      maintenances = Maintenance.where("doc.ends_at > @now AND doc.starts_at < @horizon AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0", {"now": now, "horizon": now + 7 * 86400, "ids": monitor_ids}).order("starts_at").all
-      open_incidents = Incident.where("doc.status != 'resolved' AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0", {"ids": monitor_ids}).order("started_at", "desc").all
-      history = Incident.where("doc.status == 'resolved' AND doc.started_at >= @since AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0", {"since": now - HISTORY_DAYS * 86400, "ids": monitor_ids}).order("started_at", "desc").limit(20).all
+      maintenances = Maintenance.where(
+        "doc.ends_at > @now AND doc.starts_at < @horizon AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0",
+        {
+          "now": now,
+          "horizon": now + 7 * 86400,
+          "ids": monitor_ids
+        }
+      ).order("starts_at").all
+      open_incidents = Incident.where(
+        "doc.status != 'resolved' AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0",
+        {"ids": monitor_ids}
+      ).order("started_at", "desc").all
+      history = Incident.where(
+        "doc.status == 'resolved' AND doc.started_at >= @since AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0",
+        {"since": now - HISTORY_DAYS * 86400, "ids": monitor_ids}
+      ).order("started_at", "desc").limit(20).all
     })
     today = Checker.day_of(now)
     context = {
       "now": now,
       "monitors": monitors.index_by("_key"),
-      "maintenance_ids": maintenances.filter { |window| window.active_at?(now) }.map { |window| window.monitor_ids }.flatten.uniq,
+      "maintenance_ids": maintenances.filter do |window|
+        window.active_at?(now)
+      end.map do |window|
+        window.monitor_ids
+      end.flatten.uniq,
       "open_incidents": open_incidents,
       "windows": Uptime.windows(monitor_ids, today),
       "last_day": Uptime.last_day(monitor_ids, now),
       "daily": Uptime.daily(monitor_ids, today).group_by("monitor_id"),
       "today": today
     }
-    rows = components.map { |component| StatusBoard.component_row(component, context) }
+    rows = components.map do |component|
+      StatusBoard.component_row(component, context)
+    end
     {
       "page": page,
       "status": StatusBoard.overall(rows),
       "groups": StatusBoard.group_rows(rows),
       "components": rows,
-      "open_incidents": open_incidents.map { |incident| StatusBoard.incident_row(incident, context) },
-      "maintenances": maintenances.map { |window| StatusBoard.maintenance_row(window, now) },
-      "history": history.map { |incident| StatusBoard.incident_row(incident, context) },
+      "open_incidents": open_incidents.map do |incident|
+        StatusBoard.incident_row(incident, context)
+      end,
+      "maintenances": maintenances.map do |window|
+        StatusBoard.maintenance_row(window, now)
+      end,
+      "history": history.map do |incident|
+        StatusBoard.incident_row(incident, context)
+      end,
       "generated_at": now
     }
   end
 
   static def component_row(component, context)
-    statuses = component.monitor_ids.map { |monitor_id| StatusBoard.monitor_status(monitor_id, context) }.compact
+    statuses = component.monitor_ids.map do |monitor_id|
+      StatusBoard.monitor_status(monitor_id, context)
+    end.compact
     context["open_incidents"].each do |incident|
-      touches = incident.monitor_ids.any? { |monitor_id| component.monitor_ids.includes?(monitor_id) }
+      touches = incident.monitor_ids.any? do |monitor_id|
+        component.monitor_ids.includes?(monitor_id)
+      end
       statuses.push(incident.impact == "degraded" ? "degraded" : "down") if touches
     end
     status = StatusBoard.worst(statuses)
-    daily_rows = component.monitor_ids.map { |monitor_id| context["daily"][monitor_id] ?? [] }.flatten
+    daily_rows = component.monitor_ids.map do |monitor_id|
+      context["daily"][monitor_id] ?? []
+    end.flatten
     {
       "name": component.name,
       "slug": component.slug,
@@ -73,7 +112,16 @@ class StatusBoard
   end
 
   static def uptime_figures(monitor_ids, context)
-    totals = {"t1": 0, "u1": 0, "t7": 0, "u7": 0, "t30": 0, "u30": 0, "t90": 0, "u90": 0}
+    totals = {
+      "t1": 0,
+      "u1": 0,
+      "t7": 0,
+      "u7": 0,
+      "t30": 0,
+      "u30": 0,
+      "t90": 0,
+      "u90": 0
+    }
     monitor_ids.each do |monitor_id|
       windows = context["windows"][monitor_id] ?? {}
       last_day = context["last_day"][monitor_id] ?? {}
@@ -95,12 +143,20 @@ class StatusBoard
   static def worst(statuses)
     return "pending" if statuses.length == 0
 
-    statuses.sort_by { |status| -(STATUS_SEVERITY[status] ?? 0) }.first
+    statuses.sort_by do |status|
+      -(STATUS_SEVERITY[status] ?? 0)
+    end.first
   end
 
   static def overall(rows)
-    statuses = rows.map { |row| row["status"] }.filter { |status| status != "pending" }
-    down = statuses.filter { |status| status == "down" }.length
+    statuses = rows.map do |row|
+      row["status"]
+    end.filter do |status|
+      status != "pending"
+    end
+    down = statuses.filter do |status|
+      status == "down"
+    end.length
     return StatusBoard.banner("major", "Panne générale") if down > 0 && down == statuses.length
     return StatusBoard.banner("partial", "Panne partielle : certains services sont indisponibles") if down > 0
     return StatusBoard.banner("degraded", "Performances dégradées") if statuses.includes?("degraded")
@@ -115,8 +171,14 @@ class StatusBoard
   end
 
   static def group_rows(rows)
-    names = rows.map { |row| row["group"].to_s }.uniq
-    names.map { |name| {"name": name, "components": rows.filter { |row| row["group"].to_s == name }} }
+    names = rows.map do |row|
+      row["group"].to_s
+    end.uniq
+    names.map do |name|
+      {"name": name, "components": rows.filter do |row|
+        row["group"].to_s == name
+      end}
+    end
   end
 
   static def incident_row(incident, context)
@@ -131,7 +193,14 @@ class StatusBoard
       "started_at": incident.started_at,
       "resolved_at": incident.resolved_at,
       "duration": incident.resolved_at.nil? ? nil : Probe.duration_label(incident.resolved_at - incident.started_at),
-      "updates": incident.updates.map { |update| {"status": update.status, "status_label": update.status_label, "message": update.message, "at": update.at} }
+      "updates": incident.updates.map do |update|
+        {
+          "status": update.status,
+          "status_label": update.status_label,
+          "message": update.message,
+          "at": update.at
+        }
+      end
     }
   end
 
@@ -152,7 +221,7 @@ class StatusBoard
       "degraded" => "Dégradé",
       "down" => "Panne",
       "maintenance" => "Maintenance",
-      _ => "En attente"
+      _ => "En attente",
     }
   end
 end

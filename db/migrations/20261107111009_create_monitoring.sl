@@ -1,7 +1,18 @@
 # Migration: create_monitoring — the collections Vigie writes, and the indexes
 # its hot queries need (due monitors, a monitor's recent checks, the 24 h scan,
 # rollups by monitor/day, open incidents, a slug lookup).
-const VIGIE_COLLECTIONS = ["monitors", "checks", "daily_rollups", "incidents", "incident_updates", "maintenances", "status_pages", "components", "alert_channels", "alert_deliveries"]
+const VIGIE_COLLECTIONS = [
+  "monitors",
+  "checks",
+  "daily_rollups",
+  "incidents",
+  "incident_updates",
+  "maintenances",
+  "status_pages",
+  "components",
+  "alert_channels",
+  "alert_deliveries"
+]
 
 def up(db)
   VIGIE_COLLECTIONS.each do |name|

@@ -19,7 +19,7 @@ const AUTH_MIN_PASSWORD_LENGTH = 12  # shortest password accepted at sign-up
 # spread thinly across thousands of accounts never trips it, and an attacker
 # who knows an email address can lock its owner out on demand. Keying on the
 # source address covers both.
-const AUTH_ATTEMPTS_PER_IP = 15
+const AUTH_ATTEMPTS_PER_IP = (getenv("AUTH_ATTEMPTS_PER_IP") ?? "15").to_i
 const AUTH_IP_WINDOW_SECONDS = 300
 
 # Base URL used in password-reset / confirmation emails.
@@ -32,7 +32,7 @@ const AUTH_IP_WINDOW_SECONDS = 300
 def auth_base_url
   return getenv("APP_BASE_URL").to_s if getenv("APP_BASE_URL").present?
 
-  "http://localhost:5011"
+  getenv("APP_URL") ?? "http://localhost:5099"
 end
 
 # Require a confirmed email before sign-in. Flip to true once SMTP is
@@ -82,10 +82,10 @@ class User < Model
   # cost of an offline attack against the Argon2id digest.
   def password_error(plaintext)
     value = plaintext.to_s
-    return "Password is required" if value.blank?
+    return "Le mot de passe est obligatoire" if value.blank?
 
     if value.length() < AUTH_MIN_PASSWORD_LENGTH
-      return "Password must be at least #{AUTH_MIN_PASSWORD_LENGTH} characters"
+      return "Le mot de passe doit faire au moins #{AUTH_MIN_PASSWORD_LENGTH} caractères"
     end
 
     null

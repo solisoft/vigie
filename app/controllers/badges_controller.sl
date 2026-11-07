@@ -12,7 +12,9 @@ class BadgesController < Controller
     halt(404, "Badge introuvable") unless page.published
 
     board = StatusBoard.build(page, DateTime.utc.to_unix)
-    row = board["components"].find { |candidate| candidate["slug"] == component.slug }
+    row = board["components"].find do |candidate|
+      candidate["slug"] == component.slug
+    end
     {
       "status": 200,
       "headers": {"Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "public, max-age=60"},

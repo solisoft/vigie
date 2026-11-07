@@ -9,7 +9,13 @@ class AdminController < Controller
 
   # [[label, key]] for the monitor checkboxes of a form.
   def _monitor_choices
-    Monitor.order("name").all.map { |monitor| {"id": monitor._key, "name": monitor.name, "kind": monitor.kind_label} }
+    Monitor.order("name").all.map do |monitor|
+      {
+        "id": monitor._key,
+        "name": monitor.name,
+        "kind": monitor.kind_label
+      }
+    end
   end
 
   # "2026-11-07T14:30" (a datetime-local field, UTC) → unix seconds; 0 if blank.
@@ -23,12 +29,18 @@ class AdminController < Controller
   def _local_from_unix(unix)
     return "" if unix.to_i == 0
 
-    DateTime.from_unix(unix.to_i).format("%Y-%m-%dT%H:%M")
+    DateTime.from_unix(unix.to_i).to_iso.substring(0, 16)
   end
 
   def _selected_ids(value)
     return [] if value.nil?
-    return value.filter { |id| id.to_s.present? }.map { |id| id.to_s } if type(value) == "array"
+    if type(value) == "array"
+      return value.filter do |id|
+        id.to_s.present?
+      end.map do |id|
+        id.to_s
+      end
+    end
 
     [value.to_s]
   end

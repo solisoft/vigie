@@ -3,7 +3,10 @@
     <h1><%= @incident.title %></h1>
     <p><%= @incident.kind == "auto" ? "Ouvert automatiquement" : "Déclaré à la main" %> le <%= french_time(@incident.started_at) %> · <%= @incident.impact_label %></p>
   </div>
-  <div class="actions"><span class="danger"><%- button_to("Supprimer", "/admin/incidents/#{@incident._key}", {"method": "delete", "confirm": "Supprimer cet incident et son historique ?"}) %></span></div>
+  <% delete_options = {"method": "delete", "confirm": "Supprimer cet incident et son historique ?"} %>
+  <div class="actions">
+    <span class="danger"><%- button_to("Supprimer", "/admin/incidents/#{@incident._key}", delete_options) %></span>
+  </div>
 </header>
 <section class="panel">
   <div class="panel-head">

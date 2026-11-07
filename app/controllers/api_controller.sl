@@ -7,16 +7,23 @@ class ApiController < Controller
   def status
     now = DateTime.utc.to_unix
     pages = StatusPage.where({"published": true}).order("title").all
-    pages = pages.filter { |page| page.slug == params["page"] } if params["page"].present?
+    if params["page"].present?
+      pages = pages.filter do |page|
+        page.slug == params["page"]
+      end
+    end
     return render_json({"error": "page inconnue"}, 404) if pages.length == 0 && params["page"].present?
 
-    payload = {
-      "generated_at": DateTime.from_unix(now).to_iso,
-      "pages": pages.map { |page| @_page_payload(StatusBoard.build(page, now)) }
-    }
+    payload = {"generated_at": DateTime.from_unix(now).to_iso, "pages": pages.map do |page|
+      @_page_payload(StatusBoard.build(page, now))
+    end}
     {
       "status": 200,
-      "headers": {"Content-Type": "application/json", "Cache-Control": "public, max-age=15", "Access-Control-Allow-Origin": "*"},
+      "headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=15",
+        "Access-Control-Allow-Origin": "*"
+      },
       "body": payload.to_json
     }
   end
@@ -30,7 +37,9 @@ class ApiController < Controller
       "title": page.title,
       "url": "#{Alerts.base_url}/s/#{page.slug}",
       "status": board["status"],
-      "components": board["components"].map { |row| row.except(["bars"]) },
+      "components": board["components"].map do |row|
+        row.except(["bars"])
+      end,
       "incidents": board["open_incidents"],
       "maintenances": board["maintenances"]
     }

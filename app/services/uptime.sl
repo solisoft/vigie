@@ -61,9 +61,15 @@ class Uptime
     by_day = rows.group_by("day")
     Uptime.day_list(today, BAR_DAYS).map do |day|
       day_rows = by_day[day] ?? []
-      total = day_rows.map { |row| row["total"].to_i }.sum
-      up = day_rows.map { |row| row["up"].to_i }.sum
-      maintenance = day_rows.map { |row| row["maintenance"].to_i }.sum
+      total = day_rows.map do |row|
+        row["total"].to_i
+      end.sum
+      up = day_rows.map do |row|
+        row["up"].to_i
+      end.sum
+      maintenance = day_rows.map do |row|
+        row["maintenance"].to_i
+      end.sum
       level = Uptime.level(up, total, maintenance)
       {
         "day": day,
@@ -81,9 +87,7 @@ class Uptime
   end
 
   static def level(up, total, maintenance)
-    if total.to_i == 0
-      return maintenance.to_i > 0 ? "maintenance" : "none"
-    end
+    return maintenance.to_i > 0 ? "maintenance" : "none" if total.to_i == 0
 
     ratio = Uptime.percent(up, total)
     return "ok" if ratio >= UPTIME_OK
@@ -98,7 +102,7 @@ class Uptime
       "partial" => "Perturbations",
       "down" => "Panne",
       "maintenance" => "Maintenance",
-      _ => "Pas de données"
+      _ => "Pas de données",
     }
   end
 
@@ -122,11 +126,13 @@ class Uptime
   end
 
   static def day_list(today, count)
-    (0..count).map { |i| Uptime.days_back(today, count - 1 - i) }
+    (0 .. count).map do |i|
+      Uptime.days_back(today, count - 1 - i)
+    end
   end
 
   static def days_back(today, days)
-    DateTime.parse(today).add_days(-days).format("%Y-%m-%d")
+    DateTime.parse(today).add_days(-days).to_iso.substring(0, 10)
   end
 
   static def index_rows(rows)

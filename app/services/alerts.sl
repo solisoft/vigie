@@ -18,17 +18,23 @@ class Alerts
     sent = 0
     AlertChannel.where({"active": true}).all.each do |channel|
       # The insert is the lock: a second one with the same key fails.
-      delivery = AlertDelivery.create({
-        "channel_id": channel._key,
-        "event": event,
-        "subject_id": subject_id,
-        "summary": details["title"],
-        "at": DateTime.utc.to_unix
-      }, {"key": Alerts.delivery_key(channel._key, event, subject_id)})
+      delivery = AlertDelivery.create(
+        {
+          "channel_id": channel._key,
+          "event": event,
+          "subject_id": subject_id,
+          "summary": details["title"],
+          "at": DateTime.utc.to_unix
+        },
+        {"key": Alerts.delivery_key(channel._key, event, subject_id)}
+      )
       next if delivery._errors
 
       Alerts.deliver(channel, event, details)
-      Metrics.increment("vigie.alerts", tags: {"channel": channel.kind, "event": event})
+      Metrics.increment("vigie.alerts", tags: {
+        "channel": channel.kind,
+        "event": event
+      })
       sent = sent + 1
     end
     sent
@@ -40,10 +46,14 @@ class Alerts
 
   static def deliver(channel, event, details)
     match channel.kind {
-      "email" => AlertMailer.notify(channel.target, Alerts.subject_line(event, details), Alerts.text(event, details)).deliver_later,
+      "email" => Alerts.send_email(channel, event, details),
       "slack" => Webhook.enqueue(channel.target, Alerts.slack_payload(event, details), {"queue": "alerts"}),
-      _ => Webhook.enqueue(channel.target, Alerts.json_payload(event, details), {"queue": "alerts"})
+      _ => Webhook.enqueue(channel.target, Alerts.json_payload(event, details), {"queue": "alerts"}),
     }
+  end
+
+  static def send_email(channel, event, details)
+    AlertMailer.notify(channel.target, Alerts.subject_line(event, details), Alerts.text(event, details)).deliver_later
   end
 
   static def subject_line(event, details)
@@ -51,9 +61,13 @@ class Alerts
   end
 
   static def text(event, details)
-    lines = ["#{ALERT_EVENTS[event] ?? event} : #{details["title"]}", "Sonde : #{details["monitor"]} (#{details["target"]})"]
+    lines = [
+      "#{ALERT_EVENTS[event] ?? event} : #{details["title"]}",
+      "Sonde : #{details["monitor"]} (#{details["target"]})"
+    ]
     lines.push(details["detail"]) if details["detail"].present?
-    lines.push("Incident : #{Alerts.base_url}/admin/incidents/#{details["incident_id"]}") if details["incident_id"].present?
+    incident_id = details["incident_id"]
+    lines.push("Incident : #{Alerts.base_url}/admin/incidents/#{incident_id}") if incident_id.present?
     lines.join("\n")
   end
 

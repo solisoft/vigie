@@ -10,10 +10,12 @@ class StatusPagesController < Controller
     @board = StatusBoard.build(page, DateTime.utc.to_unix)
     @page = page
     @title = page.title
-    @description = "#{@board["status"]["label"]} — état des services de #{page.title}"
+    @description = "#{this.board["status"]["label"]} — état des services de #{page.title}"
     @live_url = "/s/#{page.slug}/live"
     @feed_url = "/s/#{page.slug}/incidents.atom"
-    render("status_pages/show", {}, {"headers": {"Cache-Control": "public, max-age=15"}})
+    page_response = render("status_pages/show")
+    page_response["headers"]["Cache-Control"] = "public, max-age=15"
+    page_response
   end
 
   # GET /s/:slug/live — Server-Sent Events: a "status" event on every change

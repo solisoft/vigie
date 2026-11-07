@@ -20,13 +20,13 @@ class PagesController < AdminController
     return @_render_form("new", "Nouvelle page") if @page._errors
 
     flash("notice", "Page créée. Ajoutez-lui des composants.")
-    redirect("/admin/pages/#{@page._key}")
+    redirect("/admin/pages/#{this.page._key}")
   end
 
   # GET /admin/pages/:id — the page's settings and components
   def edit
     @page = StatusPage.find(params["id"])
-    @_form_page("Page « #{@page.title} »")
+    @_form_page("Page « #{this.page.title} »")
   end
 
   # PATCH /admin/pages/:id
@@ -35,11 +35,16 @@ class PagesController < AdminController
     @_permitted.each do |field, value|
       @page[field] = value
     end
+    if StatusPage.slug_taken?(@page.slug.to_s.trim.downcase, @page._key)
+      @page._errors = [{"field": "slug", "message": "déjà utilisé"}]
+      return @_render_form("edit", "Page « #{this.page.title} »")
+    end
+
     @page.save
-    return @_render_form("edit", "Page « #{@page.title} »") if @page._errors.length > 0
+    return @_render_form("edit", "Page « #{this.page.title} »") if @page._errors.length > 0
 
     flash("notice", "Page enregistrée.")
-    redirect("/admin/pages/#{@page._key}")
+    redirect("/admin/pages/#{this.page._key}")
   end
 
   # DELETE /admin/pages/:id — the page and its components
@@ -54,7 +59,16 @@ class PagesController < AdminController
   private
 
   def _permitted
-    attributes = permit(params, {"title": true, "slug": true, "description": true, "logo_url": true, "published": true})
+    attributes = permit(
+      params,
+      {
+        "title": true,
+        "slug": true,
+        "description": true,
+        "logo_url": true,
+        "published": true
+      }
+    )
     attributes["published"] = attributes["published"].to_s == "true"
     attributes
   end

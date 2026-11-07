@@ -64,7 +64,8 @@ class Checker
   static def emit_metrics(monitor, result)
     tags = {"kind": monitor.kind, "status": result["status"]}
     Metrics.increment("vigie.checks", tags: tags)
-    Metrics.histogram("vigie.check.latency", result["latency_ms"], tags: {"kind": monitor.kind}) unless result["latency_ms"].nil?
+    latency = result["latency_ms"]
+    Metrics.histogram("vigie.check.latency", latency, tags: {"kind": monitor.kind}) unless latency.nil?
   end
 
   # Pushes a small event to every open status page and dashboard (SSE).
@@ -72,7 +73,9 @@ class Checker
     sse_broadcast(LIVE_TOPIC, {"monitor_id": monitor._key, "status": monitor.status}.to_json, "status")
   end
 
+  # The UTC day. (Read from to_iso: DateTime#format renders the server's
+  # local time on Soli 2.32.)
   static def day_of(unix)
-    DateTime.from_unix(unix).format("%Y-%m-%d")
+    DateTime.from_unix(unix).to_iso.substring(0, 10)
   end
 end

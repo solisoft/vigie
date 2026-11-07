@@ -10,9 +10,15 @@ class SchedulerJob
     due.each do |monitor|
       monitor.next_check_at = now + monitor.interval_s
       monitor.save
-      CheckMonitorJob.perform_later({"monitor_id": monitor._key}, {"queue": "checks", "max_retries": 0})
+      CheckMonitorJob.perform_later(
+        {"monitor_id": monitor._key},
+        {"queue": "checks", "max_retries": 0}
+      )
     end
-    Metrics.gauge("vigie.monitors.down", Monitor.where({"status": "down", "paused": false}).count)
+    Metrics.gauge("vigie.monitors.down", Monitor.where({
+      "status": "down",
+      "paused": false
+    }).count)
     due.length
   end
 

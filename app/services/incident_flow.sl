@@ -27,7 +27,12 @@ class IncidentFlow
       "started_at": monitor.failing_since || now
     })
     message = "Vigie a constaté #{monitor.consecutive_failures} échecs consécutifs : #{result["error"]}"
-    IncidentUpdate.create({"incident_id": incident._key, "status": "investigating", "message": message, "at": now})
+    IncidentUpdate.create({
+      "incident_id": incident._key,
+      "status": "investigating",
+      "message": message,
+      "at": now
+    })
     Alerts.dispatch("incident.opened", incident._key, {
       "title": incident.title,
       "monitor": monitor.name,
@@ -42,7 +47,11 @@ class IncidentFlow
   static def resolve(incident, monitor, result, now)
     duration = Probe.duration_label(now - incident.started_at.to_i)
     latency = result["latency_ms"].nil? ? "" : " (#{result["latency_ms"]} ms)"
-    incident.post_update("resolved", "Le service répond de nouveau#{latency}. Durée de l'incident : #{duration}.", now)
+    incident.post_update(
+      "resolved",
+      "Le service répond de nouveau#{latency}. Durée de l'incident : #{duration}.",
+      now
+    )
     Alerts.dispatch("incident.resolved", incident._key, {
       "title": incident.title,
       "monitor": monitor.name,

@@ -4,7 +4,12 @@
 # Fields: title, kind, status ("investigating" | "identified" | "monitoring" |
 # "resolved"), impact ("degraded" | "outage"), monitor_ids (Array),
 # started_at, resolved_at (unix s).
-const INCIDENT_STATUSES = ["investigating", "identified", "monitoring", "resolved"]
+const INCIDENT_STATUSES = [
+  "investigating",
+  "identified",
+  "monitoring",
+  "resolved"
+]
 const INCIDENT_IMPACTS = ["degraded", "outage"]
 
 class Incident < Model
@@ -26,7 +31,7 @@ class Incident < Model
   end
 
   def status_label
-    Incident.status_label(@status)
+    Incident.label_for_status(@status)
   end
 
   def impact_label
@@ -42,15 +47,20 @@ class Incident < Model
     @status = status
     @resolved_at = now if status == "resolved"
     @save
-    IncidentUpdate.create({"incident_id": @_key, "status": status, "message": message, "at": now})
+    IncidentUpdate.create({
+      "incident_id": @_key,
+      "status": status,
+      "message": message,
+      "at": now
+    })
   end
 
-  static def status_label(status)
+  static def label_for_status(status)
     match status {
       "identified" => "Identifié",
       "monitoring" => "Sous surveillance",
       "resolved" => "Résolu",
-      _ => "Enquête en cours"
+      _ => "Enquête en cours",
     }
   end
 
@@ -63,17 +73,28 @@ class Incident < Model
   end
 
   static def touching(monitor_ids, limit)
-    Incident.where("LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0", {"ids": monitor_ids}).order("started_at", "desc").limit(limit).all
+    Incident.where("LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0", {"ids": monitor_ids}).order(
+      "started_at",
+      "desc"
+    ).limit(limit).all
   end
 
   private
 
   def _validate
     errors = []
-    errors.push({"field": "title", "message": "est obligatoire"}) if @title.to_s.trim.blank?
-    errors.push({"field": "status", "message": "statut inconnu"}) unless @status.blank? || INCIDENT_STATUSES.includes?(@status)
-    errors.push({"field": "impact", "message": "impact inconnu"}) unless @impact.blank? || INCIDENT_IMPACTS.includes?(@impact)
-    errors.push({"field": "monitor_ids", "message": "choisissez au moins une sonde"}) if @monitor_ids.nil? || @monitor_ids.length == 0
+    if @title.to_s.trim.blank?
+      errors.push({"field": "title", "message": "est obligatoire"})
+    end
+    unless @status.blank? || INCIDENT_STATUSES.includes?(@status)
+      errors.push({"field": "status", "message": "statut inconnu"})
+    end
+    unless @impact.blank? || INCIDENT_IMPACTS.includes?(@impact)
+      errors.push({"field": "impact", "message": "impact inconnu"})
+    end
+    if @monitor_ids.nil? || @monitor_ids.length == 0
+      errors.push({"field": "monitor_ids", "message": "choisissez au moins une sonde"})
+    end
     @_errors = (@_errors ?? []) + errors
     true
   end

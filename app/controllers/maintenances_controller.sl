@@ -14,7 +14,11 @@ class MaintenancesController < AdminController
   # GET /admin/maintenances/nouvelle
   def new
     start = (DateTime.utc.to_unix / 3600 + 1) * 3600
-    @maintenance = Maintenance.new({"starts_at": start, "ends_at": start + 3600, "monitor_ids": []})
+    @maintenance = Maintenance.new({
+      "starts_at": start,
+      "ends_at": start + 3600,
+      "monitor_ids": []
+    })
     @_form_page("Planifier une maintenance")
   end
 
@@ -59,7 +63,14 @@ class MaintenancesController < AdminController
   private
 
   def _attributes
-    attributes = permit(params, {"title": true, "description": true, "monitor_ids": []})
+    attributes = permit(
+      params,
+      {
+        "title": true,
+        "description": true,
+        "monitor_ids": []
+      }
+    )
     attributes["monitor_ids"] = @_selected_ids(params["monitor_ids"])
     attributes["starts_at"] = @_unix_from_local(params["starts_at_local"])
     attributes["ends_at"] = @_unix_from_local(params["ends_at_local"])

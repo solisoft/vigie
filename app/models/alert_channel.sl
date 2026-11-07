@@ -17,7 +17,7 @@ class AlertChannel < Model
     match @kind {
       "email" => "E-mail",
       "slack" => "Slack",
-      _ => "Webhook JSON"
+      _ => "Webhook JSON",
     }
   end
 
@@ -25,14 +25,22 @@ class AlertChannel < Model
 
   def _validate
     errors = []
-    errors.push({"field": "name", "message": "est obligatoire"}) if @name.to_s.trim.blank?
-    errors.push({"field": "kind", "message": "type inconnu"}) unless ALERT_KINDS.includes?(@kind.to_s)
+    if @name.to_s.trim.blank?
+      errors.push({"field": "name", "message": "est obligatoire"})
+    end
+    unless ALERT_KINDS.includes?(@kind.to_s)
+      errors.push({"field": "kind", "message": "type inconnu"})
+    end
     target = @target.to_s.trim
     if @kind == "email"
-      errors.push({"field": "target", "message": "adresse e-mail invalide"}) unless Regex.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", target)
+      unless Regex.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", target)
+        errors.push({"field": "target", "message": "adresse e-mail invalide"})
+      end
     else
       refusal = TargetGuard.url_refusal(target, TargetGuard.allow_private?)
-      errors.push({"field": "target", "message": refusal}) unless refusal.nil?
+      unless refusal.nil?
+        errors.push({"field": "target", "message": refusal})
+      end
     end
     @_errors = (@_errors ?? []) + errors
     true

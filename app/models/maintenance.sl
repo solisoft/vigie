@@ -35,16 +35,25 @@ class Maintenance < Model
   end
 
   static def covering?(monitor_id, now)
-    Maintenance.where("doc.starts_at <= @now AND doc.ends_at > @now AND @m IN doc.monitor_ids", {"now": now, "m": monitor_id}).count > 0
+    Maintenance.where(
+      "doc.starts_at <= @now AND doc.ends_at > @now AND @m IN doc.monitor_ids",
+      {"now": now, "m": monitor_id}
+    ).count > 0
   end
 
   private
 
   def _validate
     errors = []
-    errors.push({"field": "title", "message": "est obligatoire"}) if @title.to_s.trim.blank?
-    errors.push({"field": "starts_at", "message": "date de début obligatoire"}) if @starts_at.to_i <= 0
-    errors.push({"field": "ends_at", "message": "doit suivre le début"}) if @ends_at.to_i <= @starts_at.to_i
+    if @title.to_s.trim.blank?
+      errors.push({"field": "title", "message": "est obligatoire"})
+    end
+    if @starts_at.to_i <= 0
+      errors.push({"field": "starts_at", "message": "date de début obligatoire"})
+    end
+    if @ends_at.to_i <= @starts_at.to_i
+      errors.push({"field": "ends_at", "message": "doit suivre le début"})
+    end
     @_errors = (@_errors ?? []) + errors
     true
   end

@@ -1,7 +1,12 @@
 <header class="desk-head">
   <div><h1><%= title %></h1></div>
-  <div class="actions"><span class="danger"><%- button_to("Supprimer", "/admin/maintenances/#{@maintenance._key}", {"method": "delete", "confirm": "Supprimer cette maintenance ?"}) %></span></div>
+  <% delete_options = {"method": "delete", "confirm": "Supprimer cette maintenance ?"} %>
+  <div class="actions">
+    <span class="danger"><%- button_to("Supprimer", "/admin/maintenances/#{@maintenance._key}", delete_options) %></span>
+  </div>
 </header>
 <section class="panel"><div class="panel-body">
-  <%- partial("maintenances/form", {"maintenance": @maintenance, "url": "/admin/maintenances/#{@maintenance._key}", "choices": @monitor_choices, "starts_local": @starts_local, "ends_local": @ends_local}) %>
+  <% form_url = "/admin/maintenances/#{@maintenance._key}" %>
+  <% form_locals = {"maintenance": @maintenance, "url": form_url, "choices": @monitor_choices} %>
+  <%- partial("maintenances/form", form_locals.merge({"starts_local": @starts_local, "ends_local": @ends_local})) %>
 </div></section>

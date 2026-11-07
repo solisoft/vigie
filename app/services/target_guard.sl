@@ -5,7 +5,13 @@
 # gives the admin a readable refusal when the monitor is saved.
 # VIGIE_ALLOW_PRIVATE_TARGETS=1 lifts it (demo seed, a lab); Soli's guard then
 # also needs SOLI_HTTP_ALLOW_HOSTS (or SOLI_DEV_ALLOW_SSRF=1) to let the probe out.
-const PRIVATE_SUFFIXES = [".localhost", ".local", ".internal", ".lan", ".home.arpa"]
+const PRIVATE_SUFFIXES = [
+  ".localhost",
+  ".local",
+  ".internal",
+  ".lan",
+  ".home.arpa"
+]
 
 class TargetGuard
   static def allow_private?
@@ -17,7 +23,9 @@ class TargetGuard
     return "est obligatoire" if url.blank?
 
     lowered = url.downcase
-    return "doit commencer par http:// ou https://" unless lowered.starts_with?("http://") || lowered.starts_with?("https://")
+    unless lowered.starts_with?("http://") || lowered.starts_with?("https://")
+      return "doit commencer par http:// ou https://"
+    end
 
     host = TargetGuard.host_of(url)
     return "hôte manquant" if host.blank?
@@ -59,7 +67,12 @@ class TargetGuard
   static def private_host?(host)
     bare = host.delete_prefix("[").delete_suffix("]")
     return true if bare == "localhost" || bare == "0" || bare.blank?
-    return true if PRIVATE_SUFFIXES.any? { |suffix| bare.ends_with?(suffix) }
+    if PRIVATE_SUFFIXES.any?(&{ |suffix|
+      bare.ends_with?(suffix)
+    })
+      return true
+    end
+
     return TargetGuard.private_ipv6?(bare) if bare.includes?(":")
 
     TargetGuard.private_ipv4?(bare)
@@ -68,7 +81,9 @@ class TargetGuard
   static def private_ipv4?(host)
     return false unless Regex.matches("^[0-9]+(\\.[0-9]+){3}$", host)
 
-    octets = host.split(".").map { |part| part.to_i }
+    octets = host.split(".").map do |part|
+      part.to_i
+    end
     first = octets[0]
     second = octets[1]
     return true if [0, 10, 127].includes?(first)

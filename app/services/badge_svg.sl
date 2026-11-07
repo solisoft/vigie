@@ -1,6 +1,12 @@
 # A flat two-part SVG badge — "API | opérationnel" — for READMEs and
 # dashboards. The status is in the text, not only the colour.
-const BADGE_COLORS = {"up": "#1f7a4d", "degraded": "#a15c07", "down": "#b42318", "maintenance": "#2f5fb3", "pending": "#6b7280"}
+const BADGE_COLORS = {
+  "up": "#1f7a4d",
+  "degraded": "#a15c07",
+  "down": "#b42318",
+  "maintenance": "#2f5fb3",
+  "pending": "#6b7280"
+}
 
 class BadgeSvg
   static def render(label, status, status_text)
@@ -11,7 +17,8 @@ class BadgeSvg
     safe_label = BadgeSvg.escape(label)
     safe_status = BadgeSvg.escape(status_text)
     parts = [
-      "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"#{width}\" height=\"20\" role=\"img\" aria-label=\"#{safe_label} : #{safe_status}\">",
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"#{width}\" height=\"20\" role=\"img\"",
+      " aria-label=\"#{safe_label} : #{safe_status}\">",
       "<title>#{safe_label} : #{safe_status}</title>",
       "<rect width=\"#{left}\" height=\"20\" rx=\"3\" fill=\"#14213d\"/>",
       "<rect x=\"#{left}\" width=\"#{right}\" height=\"20\" rx=\"3\" fill=\"#{color}\"/>",

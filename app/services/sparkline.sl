@@ -8,14 +8,30 @@ class Sparkline
   static def svg(points, label)
     return "" if points.length < 2
 
-    measured = points.map { |point| point["latency_ms"].to_f }
+    measured = points.map do |point|
+      point["latency_ms"].to_f
+    end
     top = [measured.max, 1.0].max
     step = (SPARK_WIDTH - 2).to_f / (points.length - 1).to_f
-    coords = points.each_with_index.map { |pair| Sparkline.coord(pair[1], pair[0]["latency_ms"].to_f, step, top) }
-    line = coords.map { |xy| "#{xy[0]},#{xy[1]}" }.join(" ")
+    coords = points.each_with_index.map do |pair|
+      Sparkline.coord(pair[1], pair[0]["latency_ms"].to_f, step, top)
+    end
+    line = coords.map do |xy|
+      "#{xy[0]},#{xy[1]}"
+    end.join(" ")
     area = "1,#{SPARK_HEIGHT} #{line} #{coords.last[0]},#{SPARK_HEIGHT}"
-    failures = points.each_with_index.filter { |pair| pair[0]["ok"] != true }.map { |pair| Sparkline.dot(Sparkline.coord(pair[1], 0.0, step, top)) }
-    "<svg class=\"spark\" viewBox=\"0 0 #{SPARK_WIDTH} #{SPARK_HEIGHT}\" role=\"img\" aria-label=\"#{Sparkline.clean(label)}\"><polygon class=\"area\" points=\"#{area}\"/><polyline class=\"line\" points=\"#{line}\"/>#{failures.join("")}</svg>"
+    failures = points.each_with_index.filter do |pair|
+      pair[0]["ok"] != true
+    end.map do |pair|
+      Sparkline.dot(Sparkline.coord(pair[1], 0.0, step, top))
+    end
+    [
+      "<svg class=\"spark\" viewBox=\"0 0 #{SPARK_WIDTH} #{SPARK_HEIGHT}\"",
+      " role=\"img\" aria-label=\"#{Sparkline.clean(label)}\">",
+      "<polygon class=\"area\" points=\"#{area}\"/><polyline class=\"line\" points=\"#{line}\"/>",
+      failures.join(""),
+      "</svg>"
+    ].join("")
   end
 
   static def coord(index, latency, step, top)

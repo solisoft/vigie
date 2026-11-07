@@ -36,7 +36,7 @@
       </nav>
       <div class="rail-foot">
         <% if signed_in? %>
-          <span><%= current_user().email %></span>
+          <span><%= req["current_user"].email %></span>
           <%- button_to("Se déconnecter", "/logout", {"method": "delete"}) %>
         <% end %>
       </div>

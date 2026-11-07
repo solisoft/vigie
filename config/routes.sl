@@ -37,7 +37,7 @@ get("/confirmation/resend", "confirmations#new", name: "confirmation_resend")
 post("/confirmation/resend", "confirmations#create")
 
 # Admin
-middleware("require_login", -> {
+middleware("require_login", fn() {
   get("/admin", "dashboard#show", name: "dashboard")
   get("/admin/live", "dashboard#live", name: "dashboard_live")
 

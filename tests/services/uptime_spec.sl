@@ -51,9 +51,27 @@ describe("Uptime math") do
 
   test("builds 90 bars, summing monitors and filling the gaps with no data") do
     rows = [
-      {"monitor_id": "a", "day": "2026-03-02", "total": 100, "up": 100, "maintenance": 0},
-      {"monitor_id": "b", "day": "2026-03-02", "total": 100, "up": 90, "maintenance": 0},
-      {"monitor_id": "a", "day": "2026-03-01", "total": 0, "up": 0, "maintenance": 5}
+      {
+        "monitor_id": "a",
+        "day": "2026-03-02",
+        "total": 100,
+        "up": 100,
+        "maintenance": 0
+      },
+      {
+        "monitor_id": "b",
+        "day": "2026-03-02",
+        "total": 100,
+        "up": 90,
+        "maintenance": 0
+      },
+      {
+        "monitor_id": "a",
+        "day": "2026-03-01",
+        "total": 0,
+        "up": 0,
+        "maintenance": 5
+      }
     ]
     bars = Uptime.bars(rows, "2026-03-02")
     assert_eq(bars.length, 90)
@@ -73,7 +91,7 @@ describe("Rollups and windows in SoliDB") do
 
   test("folds raw checks into one rollup per monitor and day, with p50/p95, maintenance apart") do
     yesterday = uptime_now - 86400
-    (0..10).each do |i|
+    (0 .. 10).each do |i|
       uptime_check("m1", uptime_now + i, i != 3, (i + 1) * 10, false)
     end
     uptime_check("m1", uptime_now + 20, false, 5, true)
@@ -114,10 +132,42 @@ describe("Rollups and windows in SoliDB") do
   end
 
   test("sums 7, 30 and 90 day windows from rollups") do
-    DailyRollup.upsert("m1_2027-01-15", {"monitor_id": "m1", "day": "2027-01-15", "total": 100, "up": 100})
-    DailyRollup.upsert("m1_2027-01-05", {"monitor_id": "m1", "day": "2027-01-05", "total": 100, "up": 50})
-    DailyRollup.upsert("m1_2026-11-01", {"monitor_id": "m1", "day": "2026-11-01", "total": 100, "up": 0})
-    DailyRollup.upsert("m1_2026-01-01", {"monitor_id": "m1", "day": "2026-01-01", "total": 100, "up": 0})
+    DailyRollup.upsert(
+      "m1_2027-01-15",
+      {
+        "monitor_id": "m1",
+        "day": "2027-01-15",
+        "total": 100,
+        "up": 100
+      }
+    )
+    DailyRollup.upsert(
+      "m1_2027-01-05",
+      {
+        "monitor_id": "m1",
+        "day": "2027-01-05",
+        "total": 100,
+        "up": 50
+      }
+    )
+    DailyRollup.upsert(
+      "m1_2026-11-01",
+      {
+        "monitor_id": "m1",
+        "day": "2026-11-01",
+        "total": 100,
+        "up": 0
+      }
+    )
+    DailyRollup.upsert(
+      "m1_2026-01-01",
+      {
+        "monitor_id": "m1",
+        "day": "2026-01-01",
+        "total": 100,
+        "up": 0
+      }
+    )
     windows = Uptime.windows(["m1"], "2027-01-15")["m1"]
     assert_eq([windows["t7"], windows["u7"]], [100, 100])
     assert_eq([windows["t30"], windows["u30"]], [200, 150])

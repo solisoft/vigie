@@ -10,7 +10,12 @@ def flow_reset
 end
 
 def flow_result(status, error)
-  {"status": status, "latency_ms": 42, "http_status": status == "down" ? 503 : 200, "error": error}
+  {
+    "status": status,
+    "latency_ms": 42,
+    "http_status": status == "down" ? 503 : 200,
+    "error": error
+  }
 end
 
 describe("Checker.next_status") do
@@ -38,8 +43,19 @@ describe("Incident state machine") do
   before_each() do
     flow_reset()
     Metrics.reset
-    flow_monitor = Monitor.create({"name": "API", "kind": "http", "url": "https://api.example.com/health", "interval_s": 60, "failure_threshold": 2})
-    AlertChannel.create({"name": "Astreinte", "kind": "webhook", "target": "https://hooks.example.com/vigie", "active": true})
+    flow_monitor = Monitor.create({
+      "name": "API",
+      "kind": "http",
+      "url": "https://api.example.com/health",
+      "interval_s": 60,
+      "failure_threshold": 2
+    })
+    AlertChannel.create({
+      "name": "Astreinte",
+      "kind": "webhook",
+      "target": "https://hooks.example.com/vigie",
+      "active": true
+    })
   end
 
   test("records each check with its day and verdict") do
@@ -101,7 +117,12 @@ describe("Incident state machine") do
   end
 
   test("a maintenance window suppresses the incident and the alert, and flags the checks") do
-    Maintenance.create({"title": "Migration", "starts_at": flow_now - 10, "ends_at": flow_now + 600, "monitor_ids": [flow_monitor._key]})
+    Maintenance.create({
+      "title": "Migration",
+      "starts_at": flow_now - 10,
+      "ends_at": flow_now + 600,
+      "monitor_ids": [flow_monitor._key]
+    })
     Checker.record(flow_monitor, flow_result("down", "x"), flow_now)
     check = Checker.record(flow_monitor, flow_result("down", "x"), flow_now + 60)
     assert_eq(check.maintenance, true)
@@ -111,7 +132,12 @@ describe("Incident state machine") do
   end
 
   test("a monitor still failing when the window closes opens the incident then") do
-    Maintenance.create({"title": "Migration", "starts_at": flow_now - 10, "ends_at": flow_now + 100, "monitor_ids": [flow_monitor._key]})
+    Maintenance.create({
+      "title": "Migration",
+      "starts_at": flow_now - 10,
+      "ends_at": flow_now + 100,
+      "monitor_ids": [flow_monitor._key]
+    })
     Checker.record(flow_monitor, flow_result("down", "x"), flow_now)
     Checker.record(flow_monitor, flow_result("down", "x"), flow_now + 60)
     Checker.record(flow_monitor, flow_result("down", "x"), flow_now + 120)
@@ -120,7 +146,12 @@ describe("Incident state machine") do
   end
 
   test("a maintenance of another monitor changes nothing") do
-    Maintenance.create({"title": "Autre", "starts_at": flow_now - 10, "ends_at": flow_now + 600, "monitor_ids": ["someone-else"]})
+    Maintenance.create({
+      "title": "Autre",
+      "starts_at": flow_now - 10,
+      "ends_at": flow_now + 600,
+      "monitor_ids": ["someone-else"]
+    })
     Checker.record(flow_monitor, flow_result("down", "x"), flow_now)
     Checker.record(flow_monitor, flow_result("down", "x"), flow_now + 60)
     assert_eq(Incident.count, 1)
@@ -129,8 +160,14 @@ describe("Incident state machine") do
   test("emits check metrics tagged by kind and status") do
     Checker.record(flow_monitor, flow_result("up", nil), flow_now)
     Checker.record(flow_monitor, flow_result("down", "x"), flow_now + 60)
-    assert_eq(Metrics.value("vigie.checks", {"kind": "http", "status": "up"}), 1)
-    assert_eq(Metrics.value("vigie.checks", {"kind": "http", "status": "down"}), 1)
+    assert_eq(Metrics.value(
+      "vigie.checks",
+      {"kind": "http", "status": "up"}
+    ), 1)
+    assert_eq(Metrics.value(
+      "vigie.checks",
+      {"kind": "http", "status": "down"}
+    ), 1)
     assert_eq(Metrics.value("vigie.check.latency", {"kind": "http"})["count"], 2)
   end
 end
@@ -138,12 +175,31 @@ end
 describe("Certificate expiry alerts") do
   before_each() do
     flow_reset()
-    flow_monitor = Monitor.create({"name": "Certificat", "kind": "tls", "host": "example.com", "port": 443, "interval_s": 3600, "tls_warn_days": 14})
-    AlertChannel.create({"name": "Slack", "kind": "slack", "target": "https://hooks.slack.example.com/T/B/x", "active": true})
+    flow_monitor = Monitor.create({
+      "name": "Certificat",
+      "kind": "tls",
+      "host": "example.com",
+      "port": 443,
+      "interval_s": 3600,
+      "tls_warn_days": 14
+    })
+    AlertChannel.create({
+      "name": "Slack",
+      "kind": "slack",
+      "target": "https://hooks.slack.example.com/T/B/x",
+      "active": true
+    })
   end
 
   test("alerts once per certificate under the threshold") do
-    soon = {"status": "degraded", "latency_ms": 30, "http_status": nil, "error": "Le certificat expire dans 5 j", "tls_days_left": 5, "tls_not_after": "2027-01-20T00:00:00Z"}
+    soon = {
+      "status": "degraded",
+      "latency_ms": 30,
+      "http_status": nil,
+      "error": "Le certificat expire dans 5 j",
+      "tls_days_left": 5,
+      "tls_not_after": "2027-01-20T00:00:00Z"
+    }
     Checker.record(flow_monitor, soon, flow_now)
     Checker.record(flow_monitor, soon, flow_now + 3600)
     assert_eq(AlertDelivery.where({"event": "tls.expiring"}).count, 1)
@@ -154,7 +210,14 @@ describe("Certificate expiry alerts") do
   end
 
   test("stays quiet above the threshold") do
-    fine = {"status": "up", "latency_ms": 30, "http_status": nil, "error": nil, "tls_days_left": 60, "tls_not_after": "2027-03-16T00:00:00Z"}
+    fine = {
+      "status": "up",
+      "latency_ms": 30,
+      "http_status": nil,
+      "error": nil,
+      "tls_days_left": 60,
+      "tls_not_after": "2027-03-16T00:00:00Z"
+    }
     Checker.record(flow_monitor, fine, flow_now)
     assert_eq(AlertDelivery.count, 0)
   end

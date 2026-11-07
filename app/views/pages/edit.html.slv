@@ -1,6 +1,9 @@
 <header class="desk-head">
   <div><h1><%= title %></h1><p><a href="/s/<%= @page.slug %>">Voir la page publique →</a></p></div>
-  <div class="actions"><span class="danger"><%- button_to("Supprimer la page", "/admin/pages/#{@page._key}", {"method": "delete", "confirm": "Supprimer cette page et ses composants ?"}) %></span></div>
+  <% delete_options = {"method": "delete", "confirm": "Supprimer cette page et ses composants ?"} %>
+  <div class="actions">
+    <span class="danger"><%- button_to("Supprimer la page", "/admin/pages/#{@page._key}", delete_options) %></span>
+  </div>
 </header>
 
 <section class="panel">

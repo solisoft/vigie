@@ -15,7 +15,7 @@ class PasswordsController < Controller
     render(
       "passwords/new",
       {
-        "title": "Reset password",
+        "title": "Mot de passe oublié",
         "notice": "",
         "error": ""
       }
@@ -32,9 +32,9 @@ class PasswordsController < Controller
     limiter = rate_limiter_from_ip(req, AUTH_ATTEMPTS_PER_IP, AUTH_IP_WINDOW_SECONDS)
     unless limiter.allowed()
       return render("passwords/new", {
-        "title": "Reset password",
+        "title": "Mot de passe oublié",
         "notice": "",
-        "error": "Too many reset requests. Try again in a few minutes."
+        "error": "Trop de demandes. Réessayez dans quelques minutes."
       }, {"status": 429})
     end
 
@@ -48,8 +48,8 @@ class PasswordsController < Controller
     return render(
       "passwords/new",
       {
-        "title": "Reset password",
-        "notice": "If that email exists, a reset link is on its way.",
+        "title": "Mot de passe oublié",
+        "notice": "Si ce compte existe, un lien vient de partir.",
         "error": ""
       }
     )
@@ -62,9 +62,9 @@ class PasswordsController < Controller
       return render(
         "passwords/new",
         {
-          "title": "Reset password",
+          "title": "Mot de passe oublié",
           "notice": "",
-          "error": "That reset link is invalid or has expired. Request a new one."
+          "error": "Ce lien est invalide ou expiré. Demandez-en un autre."
         }
       )
     end
@@ -72,7 +72,7 @@ class PasswordsController < Controller
     return render(
       "passwords/edit",
       {
-        "title": "Choose a new password",
+        "title": "Nouveau mot de passe",
         "token": params["token"].to_s,
         "error": ""
       }
@@ -86,9 +86,9 @@ class PasswordsController < Controller
       return render(
         "passwords/new",
         {
-          "title": "Reset password",
+          "title": "Mot de passe oublié",
           "notice": "",
-          "error": "That reset link is invalid or has expired. Request a new one."
+          "error": "Ce lien est invalide ou expiré. Demandez-en un autre."
         }
       )
     end
@@ -100,7 +100,7 @@ class PasswordsController < Controller
     password_error = user.password_error(password)
     return this._reject_edit(password_error) unless password_error.nil?
 
-    return this._reject_edit("Passwords don't match.") if password != params["password_confirmation"].to_s
+    return this._reject_edit("Les deux mots de passe diffèrent.") if password != params["password_confirmation"].to_s
 
     user.finish_password_reset(password)
     # Sign the user straight in with a fresh session.
@@ -108,7 +108,7 @@ class PasswordsController < Controller
     session_set("user_id", user["_key"])
     # Stamped so a later password reset can invalidate this session.
     session_set("session_version", user.current_session_version())
-    redirect("/")
+    redirect("/admin")
   end
 
   private
@@ -117,7 +117,7 @@ class PasswordsController < Controller
   # token so the user doesn't have to click the emailed link again.
   def _reject_edit(message)
     return render("passwords/edit", {
-      "title": "Choose a new password",
+      "title": "Nouveau mot de passe",
       "token": params["token"].to_s,
       "error": message
     }, {"status": 422})
