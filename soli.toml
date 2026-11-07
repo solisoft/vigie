@@ -2,5 +2,5 @@
 name = "vigie"
 version = "0.1.0"
 main = "app.sl"
-# soli_version = "2.32.0"    # minimum soli version required to run this project
+soli_version = "2.32.0"
 # soli_version = "=2.32.0"   # or pin exactly: soli fetches and runs this version here
