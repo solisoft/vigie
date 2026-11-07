@@ -76,6 +76,24 @@ class StatusBoard
     }
   end
 
+  # What the landing page says of a page: its overall state, how many
+  # services it shows, and their mean availability over 30 days.
+  static def summary(page, now)
+    board = StatusBoard.build(page, now)
+    figures = board["components"].map do |row|
+      row["uptime"]["30d"]
+    end.compact
+    {
+      "title": page.title,
+      "slug": page.slug,
+      "description": page.description,
+      "status": board["status"],
+      "services": board["components"].length,
+      "incidents": board["open_incidents"].length,
+      "uptime_30d": figures.length > 0 ? figures.sum / figures.length : nil
+    }
+  end
+
   static def component_row(component, board_context)
     statuses = component.monitor_ids.map do |monitor_id|
       StatusBoard.monitor_status(monitor_id, board_context)

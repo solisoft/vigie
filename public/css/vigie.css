@@ -396,3 +396,96 @@ a:hover { color: var(--beam); }
   .span-90 { display: none; }
   .span-30 { display: inline; }
 }
+
+/* ---------- Landing ---------- */
+
+.landing { max-width: 960px; margin: 0 auto; padding: 28px 20px 64px; }
+.hero {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: center; gap: 32px;
+  padding: 56px 0 24px;
+}
+.eyebrow {
+  margin: 0 0 14px;
+  font: 600 .78rem/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--beam);
+}
+.hero h2 {
+  margin: 0;
+  font: 600 clamp(2.1rem, 6vw, 3.4rem)/1.05 var(--font-display);
+  letter-spacing: -.02em;
+  font-variation-settings: "SOFT" 50, "WONK" 0;
+}
+.hero h2 em { font-style: italic; color: var(--beam); }
+.lede { margin: 18px 0 0; max-width: 36em; font-size: 1.08rem; color: var(--ink-soft); }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 0; }
+.hero-actions .button { padding: 11px 18px; font-size: .95rem; }
+
+.hero-art svg { display: block; width: 100%; max-width: 320px; margin-left: auto; overflow: visible; }
+.hero-art .tower { fill: var(--surface); stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; }
+.hero-art .lamp { fill: var(--ink); }
+.hero-art .tower-line { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+.hero-art .sea { fill: none; stroke: var(--ink-soft); stroke-width: 2.4; stroke-linecap: round; }
+.hero-art .faint-sea { stroke: var(--rule); }
+.hero-art .sweep {
+  fill: var(--beam); opacity: .8;
+  transform-origin: 132px 56px;
+  animation: sweep 6s ease-in-out infinite alternate;
+}
+@keyframes sweep { from { transform: rotate(-9deg); opacity: .55; } to { transform: rotate(7deg); opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .hero-art .sweep { animation: none; } }
+
+.watchlist .component { padding: 0; }
+.watchlist-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 18px 20px; text-decoration: none; color: inherit;
+}
+.watchlist-row:hover { color: inherit; background: color-mix(in srgb, var(--paper) 60%, transparent); }
+.watchlist-row:hover .component-name { text-decoration: underline; text-underline-offset: 3px; }
+.watchlist .component-name, .watchlist .component-desc { display: block; }
+
+.features {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px;
+}
+.features li {
+  padding: 18px 20px;
+  border: 1px solid var(--rule); border-top: 3px solid var(--ink);
+  border-radius: var(--radius); background: var(--surface);
+}
+.features h3 { margin: 0 0 6px; font: 600 1.08rem/1.3 var(--font-display); }
+.features p { margin: 0; font-size: .92rem; color: var(--ink-soft); }
+
+@media (max-width: 680px) {
+  .hero { grid-template-columns: 1fr; padding-top: 36px; gap: 8px; }
+  .hero-art { order: -1; }
+  .hero-art svg { max-width: 180px; margin: 0; }
+}
+
+.section-lede { margin: -4px 0 12px; font-size: .9rem; color: var(--ink-soft); }
+.install { scroll-margin-top: 24px; }
+.install-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
+.install-needs, .install-steps li {
+  padding: 18px 20px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface);
+}
+.install h3 { margin: 0 0 8px; font: 600 1.05rem/1.3 var(--font-display); }
+.install-needs ul { margin: 0 0 12px; padding-left: 18px; }
+.install-needs li { margin: 2px 0; }
+.install-needs p { margin: 0; font-size: .88rem; }
+.install code { font-family: var(--font-mono); font-size: .86em; }
+.install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; counter-reset: step; }
+.install-steps li { counter-increment: step; position: relative; padding-left: 58px; }
+.install-steps li::before {
+  content: counter(step); position: absolute; left: 18px; top: 17px;
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ink); color: var(--paper); font: 600 .85rem/1 var(--font-mono);
+}
+.install pre {
+  margin: 0; padding: 10px 12px; overflow-x: auto;
+  border-radius: 8px; background: var(--paper); border: 1px solid var(--rule);
+  font-size: .9rem; line-height: 1.5;
+}
+.install-more { margin: 14px 0 0; font-size: .9rem; color: var(--ink-soft); }
+@media (max-width: 680px) {
+  .install-grid { grid-template-columns: 1fr; }
+}

@@ -1,8 +1,141 @@
-<main class="gate">
-  <div class="gate-card">
-    <%- partial("shared/mark", {}) %>
-    <h1>Vigie</h1>
-    <p class="muted">Aucune page de statut n'est encore publiée.</p>
-    <p class="links"><a href="/login">Se connecter à l'administration</a></p>
-  </div>
+<main class="landing">
+  <header class="masthead">
+    <a class="masthead-brand" href="/">
+      <%- partial("shared/mark", {}) %>
+      <span><h1>Vigie</h1></span>
+    </a>
+    <nav class="masthead-links" aria-label="Accès">
+      <a href="#installer">Installer</a>
+      <a href="https://github.com/solisoft/vigie">GitHub</a>
+      <% if signed_in? %>
+        <a href="/admin">Tableau de bord</a>
+      <% else %>
+        <a href="/login">Se connecter</a>
+      <% end %>
+    </nav>
+  </header>
+
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-text">
+      <p class="eyebrow">Logiciel libre · à héberger chez vous</p>
+      <h2 id="hero-title">Quelqu'un fait le guet, <em>jour et nuit</em>.</h2>
+      <p class="lede">
+        Vigie sonde vos sites, vos certificats et vos tâches planifiées, ouvre et ferme
+        les incidents toute seule, et publie une page de statut qui se met à jour en direct.
+        Elle tourne sur votre serveur : vos sondes, vos données, sans abonnement.
+      </p>
+      <p class="hero-actions">
+        <a class="button" href="#installer">L'installer chez vous</a>
+        <a class="button ghost" href="https://github.com/solisoft/vigie" target="_blank" rel="noopener noreferrer">Le code sur GitHub<span class="sr-only"> (ouvre un nouvel onglet)</span></a>
+      </p>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg viewBox="0 0 240 200">
+        <path class="sweep" d="M132 62 L240 18 V106 Z" />
+        <path class="tower" d="M110 66h22l8 104h-38z" />
+        <path class="lamp" d="M106 46h30v20h-30z" />
+        <path class="tower-line" d="M121 30v16M104 96h34M101 130h40" />
+        <path class="sea" d="M10 182c14-9 24-9 38 0s24 9 38 0 24-9 38 0 24 9 38 0 24-9 38 0 24 9 40 4" />
+        <path class="sea faint-sea" d="M30 194c12-7 20-7 32 0s20 7 32 0 20-7 32 0 20 7 32 0 20-7 32 0" />
+      </svg>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="now-title">
+    <h2 class="section-title" id="now-title">
+      <span>Démo en direct</span>
+      <% if @services > 0 %><span class="faint"><%= @services %> service<%= @services > 1 ? "s" : "" %> sous surveillance</span><% end %>
+    </h2>
+    <% if @pages.length == 0 %>
+      <p class="empty">Aucune page de statut n'est encore publiée sur cette instance. <a href="/login">Se connecter à l'administration</a> pour en créer une.</p>
+    <% else %>
+      <p class="section-lede">Les pages de statut que cette instance de Vigie publie, avec leur état réel.</p>
+      <ul class="components watchlist">
+        <% for summary in @pages %>
+          <li class="component">
+            <a class="watchlist-row" href="/s/<%= summary["slug"] %>">
+              <span>
+                <span class="component-name"><%= summary["title"] %></span>
+                <span class="component-desc">
+                  <%= summary["services"] %> service<%= summary["services"] > 1 ? "s" : "" %>
+                  <% unless summary["uptime_30d"].nil? %> · <span class="mono"><%= percent_label(summary["uptime_30d"]) %></span> sur 30 jours<% end %>
+                  <% if summary["incidents"] > 0 %> · <%= summary["incidents"] %> incident<%= summary["incidents"] > 1 ? "s" : "" %> en cours<% end %>
+                </span>
+              </span>
+              <span class="chip s-<%= summary["status"]["level"] %>"><%- status_icon(summary["status"]["level"]) %><%= summary["status"]["label"] %></span>
+            </a>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <section class="section" aria-labelledby="features-title">
+    <h2 class="section-title" id="features-title"><span>Ce que fait Vigie</span></h2>
+    <ul class="features">
+      <li>
+        <h3>Des sondes qui ne dorment pas</h3>
+        <p>HTTP(S) avec mot-clé attendu, certificats TLS (expiré ou bientôt), et heartbeats : une URL secrète que vos tâches cron appellent.</p>
+      </li>
+      <li>
+        <h3>Des incidents tout seuls</h3>
+        <p>Ouverts après des échecs consécutifs, résolus au premier succès, avec une chronologie. Les incidents manuels ont leurs suivis publiés.</p>
+      </li>
+      <li>
+        <h3>La disponibilité, chiffrée</h3>
+        <p>24 h, 7, 30 et 90 jours, latences p50 et p95, et une barre par jour sur 90 jours, lisible même sans les couleurs.</p>
+      </li>
+      <li>
+        <h3>Une page qui vit</h3>
+        <p>Chaque changement d'état est poussé en direct à la page publique et au tableau de bord, sans recharger.</p>
+      </li>
+      <li>
+        <h3>Les maintenances prévues</h3>
+        <p>Une fenêtre suspend incidents et alertes pour ses sondes, et reste hors du calcul de disponibilité.</p>
+      </li>
+      <li>
+        <h3>Prévenu, une fois</h3>
+        <p>E-mail, webhook JSON signé ou Slack : une alerte par transition. Et pour les autres outils, un flux Atom, une API JSON et des badges SVG.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section install" id="installer" aria-labelledby="install-title">
+    <h2 class="section-title" id="install-title"><span>L'héberger chez vous</span><span class="faint">Licence MIT</span></h2>
+    <div class="install-grid">
+      <div class="install-needs">
+        <h3>Il vous faut</h3>
+        <ul>
+          <li>un serveur Linux ou un Mac ;</li>
+          <li><a href="https://soli.solisoft.net">Soli</a> 2.32 ou plus récent ;</li>
+          <li>une base <strong>SoliDB</strong> ;</li>
+          <li>un nom de domaine, si la page doit être publique.</li>
+        </ul>
+        <p class="muted">Le premier compte se crée sur <code>/signup</code>, puis les inscriptions se ferment.</p>
+      </div>
+      <ol class="install-steps">
+        <li>
+          <h3>Récupérer le code</h3>
+          <pre><code>git clone https://github.com/solisoft/vigie.git
+cd vigie</code></pre>
+        </li>
+        <li>
+          <h3>Configurer</h3>
+          <pre><code>cp .env.example .env
+# SOLIDB_HOST, SOLIDB_PASSWORD, APP_URL…</code></pre>
+        </li>
+        <li>
+          <h3>Créer le schéma et lancer</h3>
+          <pre><code>soli db:migrate up
+soli serve . --port 5099</code></pre>
+        </li>
+      </ol>
+    </div>
+    <p class="install-more">Variables d'environnement, alertes e-mail et webhooks, démo et déploiement : <a href="https://github.com/solisoft/vigie#readme" target="_blank" rel="noopener noreferrer">le README sur GitHub<span class="sr-only"> (ouvre un nouvel onglet)</span></a>.</p>
+  </section>
+
+  <footer class="colophon">
+    <span>Logiciel libre, <a href="https://github.com/solisoft/vigie/blob/main/LICENSE">licence MIT</a></span>
+    <span>Écrit en <a href="https://soli.solisoft.net">Soli</a> par <a href="https://www.solisoft.net">Solisoft</a></span>
+  </footer>
 </main>

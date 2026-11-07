@@ -57,6 +57,14 @@ describe("StatusBoard") do
     assert_eq(board["components"][0]["bars"].length, 90)
   end
 
+  test("summary: the overall state, the count of services, open incidents") do
+    summary = StatusBoard.summary(board_page, DateTime.utc.to_unix)
+    assert_eq(summary["slug"], board_page.slug)
+    assert_eq(summary["status"]["level"], "ok")
+    assert_eq(summary["services"], StatusBoard.build(board_page, DateTime.utc.to_unix)["components"].length)
+    assert_eq(summary["incidents"], 0)
+  end
+
   test("a component links to its HTTP monitor's address; a heartbeat has none") do
     beat = Monitor.create({
       "name": "Cron",

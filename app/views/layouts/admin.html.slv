@@ -25,7 +25,7 @@
 <body>
   <div class="deck">
     <aside class="rail">
-      <a class="rail-brand" href="/admin"><%- partial("shared/mark", {}) %>Vigie</a>
+      <a class="rail-brand" href="/"><%- partial("shared/mark", {}) %>Vigie</a>
       <nav aria-label="Administration">
         <a href="/admin" <%- @nav == "dashboard" ? "aria-current=\"page\"" : "" %>>Tableau de bord</a>
         <a href="/admin/sondes" <%- @nav == "monitors" ? "aria-current=\"page\"" : "" %>>Sondes</a>

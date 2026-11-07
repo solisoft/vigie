@@ -1,5 +1,5 @@
 # A public status page: /s/<slug>. Fields: slug, title, description, logo_url,
-# published (Bool).
+# published (Bool), listed (Bool: shown on the landing page).
 class StatusPage < Model
   validates("title", {"custom": "_validate"})
   # A custom validator sees no _key on update (Soli 2.32), so "unique except
@@ -15,6 +15,7 @@ class StatusPage < Model
     @slug = @slug.to_s.trim.downcase
     @slug = @title.slugify if @slug.blank?
     @published = @published != false
+    @listed = @listed != false
     true
   end
 

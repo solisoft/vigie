@@ -149,6 +149,7 @@ describe("Admin dashboard and monitors") do
     body = res_body(response)
     assert_contains(body, "Boutique")
     assert_contains(body, "class=\"spark\"")
+    assert_contains(body, "<a class=\"rail-brand\" href=\"/\">")
     assert_contains(body, "class=\"fail\"")
     assert_contains(body, "data-live-url=\"/admin/live\"")
   end
@@ -306,6 +307,17 @@ describe("Admin pages and components") do
     page = StatusPage.find_by("slug", "statut-acme")
     assert_eq(res_location(response), "/admin/pages/#{page._key}")
     assert_eq(page.published, true)
+    assert_eq(page.listed, false, "an unchecked box hides the page from the landing page")
+    patch(
+      "/admin/pages/#{page._key}",
+      {
+        "title": "Statut Acme",
+        "slug": "statut-acme",
+        "published": "true",
+        "listed": "true"
+      }
+    )
+    assert_eq(StatusPage.find(page._key).listed, true)
     post(
       "/admin/pages/#{page._key}/composants",
       {

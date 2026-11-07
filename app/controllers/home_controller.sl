@@ -1,16 +1,21 @@
-# The front door: the first published status page, or the way to the admin.
+# The front door: what Vigie is, and the state of every published page.
 class HomeController < Controller
   static {
     this.layout = "status"
   }
 
-  # GET / — redirects to the first published status page
+  # GET / — landing page: the pitch and the published pages not hidden from it
   def index
-    page = StatusPage.where({"published": true}).order("title").first
-    return redirect("/s/#{page.slug}") unless page.nil?
-
-    @title = "Vigie"
-    @description = "Page de statut et surveillance de disponibilité, écrite en Soli."
+    now = DateTime.utc.to_unix
+    @pages = StatusPage.where("doc.published == true AND doc.listed != false").order("title").all.map do |page|
+      StatusBoard.summary(page, now)
+    end
+    @services = @pages.map do |summary|
+      summary["services"]
+    end.sum
+    @title = "Vigie — page de statut et surveillance de disponibilité"
+    @description = "Vigie sonde vos sites, certificats et tâches planifiées, ouvre les incidents "
+    + "tout seul et publie une page de statut en direct."
   end
 
   # GET /health

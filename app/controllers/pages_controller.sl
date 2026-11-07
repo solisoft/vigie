@@ -10,7 +10,7 @@ class PagesController < AdminController
 
   # GET /admin/pages/nouvelle
   def new
-    @page = StatusPage.new({"published": true})
+    @page = StatusPage.new({"published": true, "listed": true})
     @_form_page("Nouvelle page")
   end
 
@@ -66,10 +66,12 @@ class PagesController < AdminController
         "slug": true,
         "description": true,
         "logo_url": true,
-        "published": true
+        "published": true,
+        "listed": true
       }
     )
     attributes["published"] = attributes["published"].to_s == "true"
+    attributes["listed"] = attributes["listed"].to_s == "true"
     attributes
   end
 

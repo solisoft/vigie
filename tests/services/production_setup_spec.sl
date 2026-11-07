@@ -14,6 +14,7 @@ describe("ProductionSetup") do
   test("creates the page, one component and two monitors per site") do
     summary = ProductionSetup.run
     page = StatusPage.find_by("slug", "solisoft")
+    assert_eq(page.listed, false, "the production page stays off the landing page")
     assert_eq(summary["page"], "solisoft")
     assert_eq(summary["monitors"], PRODUCTION_SITES.length * 2)
     assert_eq(Monitor.count, PRODUCTION_SITES.length * 2)

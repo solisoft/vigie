@@ -22,5 +22,6 @@
     <%- f.errors_for("logo_url") %>
   </div>
   <label class="check"><%- f.check_box("published") %> Publiée</label>
+  <label class="check"><%- f.check_box("listed") %> Affichée sur la page d'accueil</label>
   <div class="form-actions"><%- f.submit("Enregistrer") %><a href="/admin/pages">Annuler</a></div>
 <%- end -%>

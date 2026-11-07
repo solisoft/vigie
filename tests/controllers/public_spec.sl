@@ -118,20 +118,54 @@ describe("GET /s/:slug") do
 end
 
 describe("GET / (home)") do
-  test("redirects to the first published page") do
+  test("is a landing page listing published pages with their state") do
     public_reset()
+    public_mark("up")
     response = get("/")
-    assert_eq(res_status(response), 302)
-    assert_eq(res_location(response), "/s/acme")
+    assert_eq(res_status(response), 200)
+    body = res_body(response)
+    assert_contains(body, "Ce que fait Vigie")
+    assert_contains(body, "id=\"installer\"")
+    assert_contains(body, "git clone https://github.com/solisoft/vigie.git")
+    assert_contains(body, "href=\"/s/acme\"")
+    assert_contains(body, "Acme")
+    assert_contains(body, "1 service sous surveillance")
+    assert_contains(body, "chip s-ok")
+    assert_contains(body, "Tous les systèmes sont opérationnels")
+    assert_contains(body, "og:title")
+    assert_contains(body, "href=\"https://github.com/solisoft/vigie\"")
+    assert_eq(assigns()["pages"].length, 1)
+    assert_eq(StatusPage.find(public_page._key).listed, true)
   end
 
-  test("invites to sign in when no page is published") do
+  test("leaves a page hidden from the landing page off it, still public") do
+    public_reset()
+    public_page.listed = false
+    public_page.save
+    body = res_body(get("/"))
+    assert_not(body.includes?("/s/acme"))
+    assert_eq(assigns()["pages"].length, 0)
+    assert_eq(res_status(get("/s/acme")), 200)
+  end
+
+  test("says an outage on the landing page, in words") do
+    public_reset()
+    public_mark("down")
+    body = res_body(get("/"))
+    assert_contains(body, "chip s-major")
+    assert_contains(body, "Panne générale")
+  end
+
+  test("leaves unpublished pages off the landing page") do
     public_reset()
     public_page.published = false
     public_page.save
     response = get("/")
     assert_eq(res_status(response), 200)
-    assert_contains(res_body(response), "Aucune page de statut")
+    body = res_body(response)
+    assert_contains(body, "Aucune page de statut")
+    assert_not(body.includes?("/s/acme"))
+    assert_eq(assigns()["services"], 0)
   end
 
   test("health answers ok") do

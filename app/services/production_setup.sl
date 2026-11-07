@@ -147,7 +147,8 @@ class ProductionSetup
         "slug": PRODUCTION_SLUG,
         "title": "Solisoft",
         "description": "État des services Solisoft, mis à jour en direct",
-        "published": true
+        "published": true,
+        "listed": false
       })
     end
     PRODUCTION_SITES.each_with_index do |site, position|
