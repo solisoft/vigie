@@ -48,7 +48,6 @@ const PRODUCTION_SITES = [
   ["CSW admin", "csw-admin.solisoft.net", "Applications", "CSW, administration (accès protégé)", 401],
   ["CSW B2B", "csw-b2b.solisoft.net", "Applications", "CSW, boutique B2B (accès protégé)", 401],
   ["CSW B2C", "csw-b2c.solisoft.net", "Applications", "CSW, boutique B2C (accès protégé)", 401],
-  ["CSW config", "csw-config.solisoft.net", "Applications", "CSW, configurateur", 399],
   ["Epiks properties", "properties.epiks.net", "Clients", "Epiks", 399],
   ["Le Télégraphe", "v2.letelegraphe.org", "Clients", "Le Télégraphe", 399],
   ["Privatisation Télégraphe", "privatisation.letelegraphe.org", "Clients", "Le Télégraphe, privatisation", 399]
