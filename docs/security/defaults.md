@@ -1,0 +1,67 @@
+# Production security defaults
+
+Soli’s MVC surface is wide. This page is the **honest list of what production does today** versus **what a public-internet app should still set**. The long-term hardening program is to collapse that gap so `soli new` + `soli serve` is safe without a wiki.
+
+For request-edge knobs (`SOLI_TRUST_PROXY`, body size, CSRF tokens) see [Server Hardening](/docs/builtins/hardening). For response headers see [Security Headers](/docs/builtins/security-headers).
+
+## Already on by default (production)
+
+| Control | What it does |
+|---------|----------------|
+| Auto-escaped templates | `<%= %>` HTML-escapes, including non-String values |
+| CSRF Origin/Referer gate | Cross-site state-changing requests without a matching origin fail |
+| Security headers | Standard preset in production (nosniff, frame options, HSTS, CSP where configured) |
+| SSRF on `HTTP.*` | Loopback, private, reserved and benchmarking ranges refused (incl. `0.0.0.0/8`, `192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`, and IPv6 forms that embed a blocked IPv4 — NAT64, 6to4, Teredo, IPv4-compatible); exceptions are literal `host:port` in `SOLI_HTTP_ALLOW_HOSTS`. The same guard covers PDF remote images and the PAdES `sign.tsa` URL, and every redirect hop is re-validated |
+| Framework-reserved paths | Anything under `/__soli/`, `/__solidev/`, `/__dev/`, `/__coverage__` or `/__livereload` that the framework does not itself serve is a 404 — it never reaches an app route such as `/:slug`, and is not CSRF-exempt |
+| Generic 5xx messages | A custom `errors/5xx` template receives a generic `message` (`"Internal Server Error"`) in production, never the internal error text; the real error is logged. 4xx messages are unchanged |
+| `/_metrics` behind a proxy | Without `SOLI_METRICS_TOKEN`, refused (404) when the request carries `X-Forwarded-For` / `X-Real-IP` / `Forwarded` or `trust_proxy` is on |
+| Request body budget | Bodies are charged against `SOLI_MAX_INFLIGHT_BODY_BYTES` as they arrive, and one client may hold at most `SOLI_BODY_BUDGET_PER_IP_BYTES` of it (a quarter by default — behind a proxy, turn trust proxy on or every client shares the proxy's quarter); a body stalled `SOLI_BODY_IDLE_TIMEOUT_SECS` (10 s) between frames is a 408 |
+| Request body cap | 8 MiB (`SOLI_MAX_BODY_SIZE`); 413 when exceeded |
+| Attachment types | Default allowlist excludes `text/html`, SVG, XML; blob route sends `nosniff` + `Content-Disposition: attachment` for anything but images (not SVG) and audio/video |
+| SQL TLS | Postgres/MySQL `sslmode` / `ssl-mode` via rustls; default `prefer`. Outside `--dev`, a one-time warning is logged when a connection to a non-local host uses `disable`, `prefer` or `require` |
+| Panic containment | A panicking handler is a 500; the worker stays up (`catch_unwind`) |
+| Log redaction | Credential-looking params, binds, locals (and the data passed to a failing `render()`), and HTTP URLs are `[REDACTED]`; `api_key`, `api-key` and `apiKey` are one name |
+| Jobs dashboard | 404 in production unless `SOLI_JOBS_USER`/`PASSWORD`, `SOLI_JOBS_TOKEN` or `SOLI_ADMIN_*` is set |
+| Errors dashboard (`/__soli/errors`) | 404 in production unless `SOLI_ERRORS_USER`/`PASSWORD`, `SOLI_ERRORS_TOKEN` or `SOLI_ADMIN_*` is set; stored samples are redacted (auth and API-key headers, cookies, secret-named params and locals — including `render()` data — at any depth, raw body); the replay `curl` line never carries credential headers; at most 1000 groups per app, new fingerprints beyond that fold into one overflow group |
+| Mobile builds (`/__soli/mobile`) | 404 unless `SOLI_MOBILE_USER`/`PASSWORD`, `SOLI_MOBILE_TOKEN` or `SOLI_ADMIN_*` is set (open to this machine under `--dev`); uploads take a Bearer token, are streamed to disk under a hard cap (`SOLI_MOBILE_MAX_SIZE`, 512 MiB) and never reach a worker; stored file names are generated, never the client's; install links are per-build random tokens, revoked by deleting the build, and off with `SOLI_MOBILE_PUBLIC_INSTALL=0`; the CLI reads its token only from the environment |
+| Spam dashboard (`/__soli/spam`) | 404 in production unless `SOLI_SPAM_USER`/`PASSWORD`, `SOLI_SPAM_TOKEN` or `SOLI_ADMIN_*` is set; posts are stored without their private-looking fields (password, token, card…) and cut to 2000 characters per field; at most 1000 posts per app |
+| Slow-queries dashboard (`/__soli/slow_queries`) | 404 in production unless `SOLI_SLOW_QUERIES_USER`/`PASSWORD`, `SOLI_SLOW_QUERIES_TOKEN` or `SOLI_ADMIN_*` is set; bind values under secret-looking names are redacted and long values cut (`SOLI_SLOW_QUERY_BINDS=off` stores none); at most 1000 shapes per app. The all-queries view stores shapes and totals only, never a bind value |
+| Notifications (`SOLI_NOTIFY_*`) | Off until a destination is set; webhook URLs pass the same SSRF guard as `Webhook.enqueue`; JSON bodies signed with `X-Soli-Signature` when `SOLI_NOTIFY_SECRET` is set; the pages show destinations by product, never the webhook URL |
+| Production boot gate | `APP_ENV=production` (or `prod`) **refuses to start** without `SOLI_APP_HOSTS` (at least one hostname) and `SOLI_SESSION_SECRET` of 32+ characters. `--dev` and non-production env skip the gate |
+
+## You still set (today)
+
+These are **not** implied by `soli serve` without env. Treat them as required for a public host:
+
+| Control | Why |
+|---------|-----|
+| `SOLI_APP_HOSTS` | Required at production boot. CSRF origin checks use this list, not a forgeable `Host` / `X-Forwarded-Host` |
+| `SOLI_SESSION_SECRET` | Required at production boot (32+ chars); sealed cookies and the cookie session driver derive keys from it |
+| `SOLI_CSRF_TOKENS=require` | Tokens are *verified when present*; this makes a missing token a 403 for browser form posts. **`soli new` writes this into `.env`.** Existing apps stay optional until they set it. |
+| `permit(...)` / `attr_accessible` | Mass assignment is not blocked on `Model.create(params)` unless you whitelist |
+| `sslmode=verify-full` | Default `prefer` still allows a cleartext fallback if the server offers none, and `require` encrypts without checking who answers. `verify-full` is the only mode that silences the startup warning for a remote host |
+| `SOLI_TRUST_PROXY=1` | Only behind a proxy that **strips** inbound `X-Forwarded-*` then sets its own. Pair it with `SOLI_TRUSTED_PROXIES`: the list is checked against the real TCP peer everywhere a forwarded header is read — including the CSRF Origin gate, WebSocket and live-reload upgrade origin checks, and the `--dev` same-origin check, which used to trust `X-Forwarded-Host` from any peer once trust proxy was on |
+| Reverse-proxy TLS | `soli serve` is HTTP. Terminate TLS at Caddy/nginx/ALB |
+| Rate limits on auth | `soli generate auth` includes per-IP throttling; other endpoints need `rate_limit` |
+
+## Under `--dev`
+
+The dev server exposes powerful endpoints (dev-bar diagnostics, `/__dev/*`, the mail inbox, request replay, the error-page REPL). They answer only when the request's `Host` is local — `localhost`, `*.localhost`, an IP literal, or a host listed in `SOLI_APP_HOSTS` — so a DNS-rebinding page cannot drive them from a browser. A LAN name such as `mymac.local` must be added to `SOLI_APP_HOSTS`. The REPL token is not embedded in error pages served to any other host. The inbox *clear* and *replay* POSTs additionally require a same-origin `Origin`/`Referer`. The jobs dashboard is credential-free only from a loopback peer with a local `Host`; otherwise it wants the configured Basic/Bearer credentials (404 when none are set).
+
+## Target (hardening program)
+
+Not shipped as defaults yet — do not assume they already fail closed:
+
+- ~~`SOLI_CSRF_TOKENS=require` for new apps~~ **shipped** (`soli new` `.env`)
+- ~~Production boot **fails** if `SOLI_APP_HOSTS` or a short `SOLI_SESSION_SECRET` is missing~~ **shipped**
+- ~~Lint on unfiltered `Model.create(params)`~~ **shipped** (`security/unfiltered-mass-assignment`)
+- Stricter CSP that matches vendored htmx + Alpine
+- `DATABASE_URL` examples using `sslmode=require`
+
+## Related
+
+- [Server Hardening](/docs/builtins/hardening)
+- [Forms & CSRF](/docs/core-concepts/forms)
+- [Sessions](/docs/security/sessions)
+- [Authentication](/docs/security/authentication)
+- [Authorization](/docs/security/authorization)

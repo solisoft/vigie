@@ -1,0 +1,86 @@
+# Application-wide view helpers
+#
+# A helper sees the builtins a script sees, not the functions only a view has
+# such as `substring(...)`: call string methods (`text.substring(0, 3)`,
+# `text.upcase`) instead.
+
+# Cut text to at most `length` characters, the suffix included (a suffix
+# longer than `length` comes back alone)
+def truncate_text(text: String, length: Int, suffix: String) -> String
+  return text if len(text) <= length
+
+  text.substring(0, length - len(suffix)) + suffix
+end
+
+# Capitalize the first letter and leave the rest as it is: "hello WORLD"
+# gives "Hello WORLD" (`text.capitalize` lowercases the rest)
+def capitalize(text: String) -> String
+  text.substring(0, 1).upcase + text.substring(1, len(text))
+end
+
+# SEC-012: Reject href values that would let an attacker run JS through
+# `javascript:` (or similar) URL schemes. HTML-escaping the URL is *not*
+# enough — the browser still parses `javascript:alert(1)` inside an
+# `href` attribute. Mirror the allowlist used by the markdown sanitiser.
+def _is_safe_link_url(url)
+  lower = url.downcase()
+  return true if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+  return true if lower.starts_with("/") || lower.starts_with("#") || lower.starts_with("?")
+
+  # No allowed scheme prefix; treat as relative *only* if there is no
+  # scheme separator (`:`) before the first /?#. Anything else is a
+  # custom scheme like javascript:/data: and must be refused.
+  cut = len(lower)
+  slash_at = lower.index_of("/")
+  cut = slash_at if slash_at != -1 && slash_at < cut
+  query_at = lower.index_of("?")
+  cut = query_at if query_at != -1 && query_at < cut
+  fragment_at = lower.index_of("#")
+  cut = fragment_at if fragment_at != -1 && fragment_at < cut
+  !lower.substring(0, cut).contains(":")
+end
+
+def _safe_link_url(url)
+  return url if _is_safe_link_url(url)
+
+  "#"
+end
+
+# Generate an HTML link
+def link_to(text: String, url: String) -> String
+  "<a href=\"" + html_escape(_safe_link_url(url)) + "\">" + html_escape(text) + "</a>"
+end
+
+# Generate an HTML link with CSS class
+def link_to_class(text: String, url: String, css_class: String) -> String
+  let href = html_escape(_safe_link_url(url))
+  "<a href=\"" + href + "\" class=\"" + html_escape(css_class) + "\">" + html_escape(text) + "</a>"
+end
+
+# Pluralize a word based on count
+def pluralize(count: Int, singular: String, plural: String) -> String
+  return str(count) + " " + singular if count == 1
+
+  str(count) + " " + plural
+end
+
+# Simple pluralize (adds 's')
+def pluralize_simple(count: Int, word: String) -> String
+  return str(count) + " " + word if count == 1
+
+  str(count) + " " + word + "s"
+end
+
+# Absolute URL of `path` (starting with "/") for share tags: Open Graph,
+# Twitter cards, the canonical link. From APP_URL (https://myapp.example.com),
+# else the first of SOLI_APP_HOSTS over https; never from the request's Host
+# header, which the client controls. Without either, it stays relative.
+def absolute_url(path)
+  base = getenv("APP_URL").to_s
+  if base.blank?
+    host = getenv("SOLI_APP_HOSTS").to_s.split(",").first.to_s.trim
+    base = host.blank? ? "" : "https://" + host
+  end
+  base = base.substring(0, len(base) - 1) if base.ends_with?("/")
+  base + path
+end

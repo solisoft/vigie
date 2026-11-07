@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+/target/
+*.o
+*.so
+
+# Process files
+*.pid
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Native builds (`soli mobile build`) and the builds /__soli/mobile stores
+/dist/mobile/
+/storage/mobile/
+
+# Coverage
+coverage/
+.coverage
+
+# The EUI publisher key: clients pin it, and it signs the manifest. Never public.
+config/eui_publisher.pkcs8

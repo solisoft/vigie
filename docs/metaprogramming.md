@@ -1,0 +1,166 @@
+# Metaprogramming
+
+Soli supports runtime introspection and code generation: `respond_to?`, `send`, `method_missing`, `instance_eval`, `class_eval`, `define_method`, `alias_method`, `inherited`, plus instance variable inspection helpers.
+
+This page focuses on two capabilities that let you extend the language from pure Soli code: **adding methods to primitive types** and **defining custom Model DSL helpers**.
+
+## Class reopening with `define_method` and `alias_method`
+
+You can add methods to any class after it's defined. This works on user-defined classes:
+
+```soli
+class Greeter
+  def say
+    "hello"
+  end
+end
+
+Greeter.define_method("shout", fn() { "HELLO!" })
+Greeter.alias_method("yell", "shout")
+
+g = Greeter.new()
+g.shout    # => "HELLO!"
+g.yell     # => "HELLO!"
+```
+
+A method added this way reaches every instance at once, existing ones included, and every subclass, even one whose instances already called methods:
+
+```soli
+class Loud < Greeter
+end
+
+loud = Loud.new()
+loud.say                                    # => "hello"
+Greeter.define_method("whisper", fn() { "psst" })
+loud.whisper                                # => "psst"
+```
+
+`class_eval` runs a block with `self` and `this` bound to the class. Inside, `define_method` writes to that class:
+
+```soli
+Greeter.class_eval do
+  define_method("wave", fn() { "👋" })
+end
+```
+
+## Extending primitive types
+
+The same machinery works on built-in primitive types: `Int`, `Float`, `Bool`, `Decimal`, `String`, `Array`, `Hash`, `Symbol`, `Null`. User-defined methods are stored in a per-type overlay and are checked **before** built-in methods, so you can add new methods or shadow existing ones (with one exception, see [Precedence](#precedence)).
+
+```soli
+Int.define_method("doubled", fn() { this * 2 })
+Int.define_method("times_n", fn(n) { this * n })
+
+3.doubled        # => 6   (zero-arg auto-invokes without parens)
+3.doubled()      # => 6
+4.times_n(5)     # => 20
+
+String.define_method("shout", fn() { this + "!!!" })
+"hi".shout()     # => "hi!!!"
+
+Array.define_method("second", fn() { this[1] })
+[10, 20, 30].second()   # => 20
+```
+
+`alias_method` works intra-type:
+
+```soli
+String.define_method("yell", fn() { this + "!" })
+String.alias_method("shout", "yell")
+"ok".shout    # => "ok!"
+```
+
+### Precedence
+
+Lookup order on a primitive value:
+
+1. User-defined methods (registered via `define_method` / `class_eval`).
+2. For `Hash`, read without parentheses: the key (`h.foo` returns the value at key `"foo"` when the hash has it — even a key named like a built-in, so `{"size": 2048}.size` is `2048`).
+3. Built-in methods (`length`, `upcase`, `map`, `times`, etc.).
+
+So a user method on `Hash` shadows the key, and the key shadows a built-in of the same name, the way an instance field shadows a method. A call with parentheses always means the method: `{"size": 2048}.size()` is `1`, the number of entries. This matches Ruby's monkey-patching semantics, and both engines (`soli serve` and `soli test`) follow it.
+
+One exception: a call **with parentheses and no block** on a `String`, `Array` or `Hash`, to one of the built-ins those types dispatch directly (`includes?`, `contains?`, `map`, `select`, `filter`, `each`, `sum`, `first`, `count`, `upcase`, `split`, `keys`, `merge`, …), runs the built-in even when you have shadowed it:
+
+```soli
+Array.define_method("sum", fn() { "mine" })
+
+[1, 2].sum                  # => "mine"   (no parentheses: your method)
+[1, 2].sum()                # => 3        (parentheses: the built-in)
+[1, 2].count { |x| x > 1 }  # => your `count`, if you defined one (a block)
+5.to_s()                    # => your `to_s`, if you defined one (not a String/Array/Hash)
+```
+
+Both engines draw this line in the same place. To change what a built-in does on these three types, give your method a new name rather than shadowing the built-in.
+
+### Performance
+
+Dispatch is gated by a single Relaxed atomic load. When no user methods have been registered for any primitive type, every call to `3.foo` short-circuits in one cycle and falls straight through to the built-in match. Registered methods cost a single hashmap lookup on the slow path.
+
+### Threading and worker model
+
+The user-method overlay is `thread_local!` — each worker thread (in `soli serve`) has its own copy. Registration that happens during model/controller load runs once per worker, so the overlays are consistent across workers without needing a global lock.
+
+## Named scopes
+
+`scope` is a class-body DSL — same shape as `validates`, `has_many`, `before_save`. The class is auto-prepended to the call, and `this` inside the closure is bound to a fresh `QueryBuilder` for the model:
+
+```soli
+class Post < Model
+  scope("published", fn() { this.where("status = @s", { "s": "published" }) })
+  scope("recent",    fn() { this.order("created_at", "desc").limit(10) })
+end
+
+# Accessing the scope name invokes the closure and returns a QueryBuilder:
+let posts = Post.published.where("author_id = @id", { "id": 42 }).all
+```
+
+The closure returns the (possibly refined) `QueryBuilder`. Scopes compose with the rest of the query DSL — `Post.published.recent` chains them.
+
+Scope storage is per-thread (`Rc<Function>` is `!Send` and can't go in the process-global `MODEL_REGISTRY`); each worker registers scopes when it loads its model files.
+
+## Instance `method_missing`
+
+When an instance receives a message it has no method for, `method_missing(name, ...)` runs with the method name first. Parameters the call did not supply are `nil`. A **last parameter named `args`** receives every remaining argument as an array, so a catch-all takes any arity:
+
+```soli
+class Recorder
+  def method_missing(name, args)
+    "#{name} called with #{args.length} argument(s)"
+  end
+end
+
+recorder = Recorder.new()
+recorder.anything(1, 2, 3)   # "anything called with 3 argument(s)"
+```
+
+A bare `obj.name` (no parentheses) evaluates to the bound method, not its result; call with `()`.
+
+## Fields by name
+
+`record[name]` reads a field whose name is only known at run time, and
+`record[name] = value` writes it — the same read and write as `record.name`,
+on any instance, models included:
+
+```soli
+def copy_fields(source, target, names)
+  names.each do |name|
+    target[name] = source[name]
+  end
+end
+
+copy_fields(draft, post, ["title", "body"])
+```
+
+The write follows the rules of `record.name = value`: a `private` or
+`protected` field is refused from outside the class (`this[name]` inside it is
+fine), a `const` field cannot be reassigned, a model's `_`-prefixed metadata
+(`_key`, `_id`, …) is read-only, and a translated field is staged for the next
+save. A missing field reads as `nil`. Both engines agree, and the type checker
+accepts a String index on any instance.
+
+## Cross-references
+
+- [Models](models.md) — the full Model DSL (`validates`, `has_many`, `before_save`, etc.).
+- [Validation](validation.md) — built-in validators and the schema-style `V` API.
+- See `tests/builtins/extend_int_methods_spec.sl`, `tests/builtins/extend_string_methods_spec.sl`, `tests/builtins/extend_array_hash_spec.sl`, `tests/builtins/extend_primitive_alias_spec.sl`, and `tests/builtins/model_scope_spec.sl` for working examples.

@@ -1,0 +1,5252 @@
+# Soli Language Reference
+
+A comprehensive guide to the Soli programming language, covering syntax, types, control flow, functions, classes, and advanced features.
+
+---
+
+## Table of Contents
+
+1. [Getting Started](#getting-started)
+2. [Variables & Types](#variables--types)
+3. [Operators](#operators)
+4. [Control Flow](#control-flow)
+5. [Error Handling](#error-handling)
+6. [Functions](#functions)
+7. [Collections](#collections)
+8. [Classes & OOP](#classes--oop)
+9. [Pattern Matching](#pattern-matching)
+10. [Enums](#enums)
+11. [Pipeline Operator](#pipeline-operator)
+12. [Modules](#modules)
+13. [Built-in Functions](#built-in-functions)
+14. [DateTime & Duration](#datetime--duration)
+15. [Linting](#linting)
+
+---
+
+## Getting Started
+
+### What is Soli?
+
+Soli is a modern, statically-typed programming language designed for clarity and expressiveness. It combines object-oriented programming with functional concepts like the pipeline operator, making it ideal for web development and data processing.
+
+### Hello World
+
+```soli
+# The classic first program
+print("Hello, World!");
+```
+
+### Your First Soli Program
+
+```soli
+# A simple program that calculates and displays results
+def calculate_area(radius: Float) -> Float
+  3.14159 * radius * radius
+end
+
+radius = 5.0;
+area = calculate_area(radius);
+print("The area of a circle with radius " + str(radius) + " is " + str(area));
+# Output: The area of a circle with radius 5.0 is 78.53975
+```
+
+### Running Soli Code
+
+```bash
+# Run a single file
+soli hello.sl
+
+# Pass it arguments, read as System.argv
+soli hello.sl one two
+
+# Or start it with #!/usr/bin/env soli, chmod +x it, and run it directly
+./hello.sl one two
+
+# Run it on the tree-walking interpreter instead of the VM
+soli --tree hello.sl
+
+# Build one executable that runs it (--thin: a few KB, runs with the installed soli)
+soli build hello.sl
+
+# Run with hot reload (development)
+soli serve
+
+# Run tests
+soli test
+
+# Lint code for style issues
+soli lint              # all .sl files in current dir (recursive)
+soli lint src/         # lint a directory
+soli lint app/main.sl  # lint a single file
+```
+
+A script runs on the bytecode VM, the engine `soli serve` uses in production, unless it needs the
+tree-walking interpreter: it uses class reflection such as `send`, `method_missing`, a model
+callback or a state machine, or it reads a function with no required parameter without
+parentheses (`x = helper`), which the interpreter calls and the VM would not. A bare `clock`
+runs on the VM. That is decided
+before the first line runs. `--tree` forces the interpreter, `--vm` the VM, and
+`SOLI_ENGINE_LOG=1` prints which one runs and why (see
+[Configuration](configuration.md#script-engine)). `soli test`, the REPL and `soli serve --dev` use
+the interpreter.
+
+Errors read the same on both engines, at the same `line:column`, and a function's declared return
+type is checked on both (`function 'f' expected to return Int, got null`; `soli serve` in
+production runs apps without that check, as it always has). One difference you may meet: on the
+VM, a variable first assigned inside an `if` or a `while` body can be read after it — `nil` inside
+a function when the branch did not run — where the interpreter raises *Undefined variable*. The
+type checker refuses that read either way, so it only shows under `--no-type-check`; `soli serve`
+has always behaved like the VM here.
+
+---
+
+## Variables & Types
+
+### Variable Declaration
+
+Variables are declared using the `let` keyword. Soli uses block scoping.
+
+```soli
+# Basic variable declarations
+name = "Alice";           # String
+age = 30;                 # Int
+temperature = 98.6;       # Float
+is_active = true;         # Bool
+nothing = null;           # Null
+```
+
+### Type Annotations
+
+You can explicitly specify types for better documentation and type safety.
+
+```soli
+# Explicit type annotations
+let name: String = "Alice";
+let age: Int = 30;
+let temperature: Float = 98.6;
+let is_active: Bool = true;
+let scores: Int[] = [95, 87, 92];
+let user: Hash = {"name": "Alice", "age": 30};
+```
+
+### Primitive Types
+
+Soli provides six primitive types:
+
+```soli
+# Int - 64-bit signed integer
+count = 42;
+negative = -100;
+large = 9_000_000;  # Underscores for readability
+# Past the Int range (-9223372036854775808..9223372036854775807) the operators
+# raise "integer overflow" instead of wrapping: + - * / %, unary -, += and -=,
+# ++ and --. The error is catchable, and the variable keeps its value.
+
+# Float - 64-bit floating-point
+pi = 3.14159;
+small = 0.001;
+# No exponent literal: `2.5e10` does not parse. Use "2.5e10".to_f
+
+# Decimal - exact decimal arithmetic, for money: a D suffix after at least
+# one decimal place (100.00D, not 100D)
+price = 19.99D
+rate = 0.0675D
+# Past Decimal's range (about 7.9e28) a literal raises "Invalid decimal
+# literal"; digits past the 28th decimal place are rounded.
+
+# String - UTF-8 text
+greeting = "Hello, World!";
+multiline = "Line 1\nLine 2\tTabbed";
+accent = "caf\u00e9";         # \u + 4 hex digits, or \u{1F600} (1 to 6)
+bold = "\e[1mbold\e[0m";     # \e is ESC (ANSI codes), \0 is NUL
+raw = r"Path: C:\Users\name";  # Raw string (no escape processing)
+
+# Multiline strings
+poem = """The fog comes
+on little cat feet.""";
+
+line = """She said "hi"""";   # quotes before the closing three are content
+
+# Command substitution - execute shell commands
+files = `ls *.sl`;        # Returns Future<{stdout, stderr, exit_code}>
+output = files.stdout;     # Auto-resolves when accessed
+code = files.exit_code;    # Exit code (0 = success)
+
+# Bool - Boolean values
+is_valid = true;
+is_complete = false;
+
+# Null - Absence of value
+missing = null;
+```
+
+**Escape sequences** in `"…"` and `'…'`: `\n`, `\t`, `\r`, `\\`, `\"`, `\'`,
+`\0` (NUL), `\e` (ESC, for ANSI codes), `\u{1F600}` (1 to 6 hex digits) and
+`\u00e9` (exactly 4, as in JSON — a surrogate pair such as `\uD83D\uDE00`
+makes one character). Any other backslash sequence is a syntax error. Raw
+strings (`r"…"`, `"""…"""`) process none; `[[ … ]]` is not a string (it was
+removed — `[[` opens a nested array). `soli fmt` keeps a literal
+written with `\u`, `\e` or `\0` as it is.
+
+### Type Inference
+
+Soli automatically infers types when not explicitly specified:
+
+```soli
+# Type inference examples
+x = 5;              # Inferred as Int
+y = 3.14;           # Inferred as Float
+z = "hello";        # Inferred as String
+flag = true;        # Inferred as Bool
+nums = [1, 2, 3];   # Inferred as Int[]
+person = {"name": "Alice"};  # Inferred as Hash
+
+# You can always add annotations even with inference
+id = 123;  # Int - inferred
+let user_id: Int = 123;  # Explicit annotation, still Int
+```
+
+### Constants
+
+Use `const` for values that should never change:
+
+```soli
+const MAX_CONNECTIONS = 100;
+const DEFAULT_TIMEOUT = 30;
+const PI = 3.14159265359;
+
+# const values cannot be reassigned
+# MAX_CONNECTIONS = 200;  # This would cause an error
+```
+
+### Scope
+
+Variables in Soli are block-scoped:
+
+```soli
+x = 1;
+
+if true
+  y = 2;      # y is only visible in this block
+  x = 3;      # This shadows the outer x
+  print(x);       # Output: 3 (inner x)
+end
+
+print(x);           # Output: 1 (outer x)
+
+# Loop scope
+for i in range(0, 3)
+  print(i);       # i is visible only within the loop
+end
+# print(i);         # Error: i is not defined
+```
+
+### Shadowing
+
+Variable shadowing allows inner blocks to redefine outer variables:
+
+```soli
+message = "outer";
+
+if true
+  message = "inner";
+  print(message);  # "inner"
+end
+
+print(message);      # "outer"
+
+# Common use case: transforming data
+data = get_data();
+if data != null
+  data = process(data);  # Transform while keeping same name
+  print(data);
+end
+```
+
+---
+
+## Operators
+
+### Arithmetic Operators
+
+```soli
+a = 10;
+b = 3;
+
+# Basic arithmetic
+print(a + b);   # 13  (addition)
+print(a - b);   # 7   (subtraction)
+print(a * b);   # 30  (multiplication)
+print(a / b);   # 3.3333333333333335  (division - always float!)
+print(a % b);   # 1   (modulo)
+
+# Integer division requires special handling
+int_result = int(a / b);  # 3
+remainder = a % b;        # 1
+
+# Compound assignment
+counter = 0;
+counter = counter + 1;  # 1
+counter += 1;           # 2 (shorthand)
+counter *= 2;           # 4
+# Also: -=, /=, %=
+```
+
+### Conditional Assignment Operators
+
+Soli supports three conditional assignment operators that only assign when the
+target meets a condition. They follow the short-circuit semantics of their
+matching binary operators.
+
+```soli
+# ||=  Assign only if the current value is falsy (false, null, 0, "", [], {})
+name = null;
+name ||= "Anonymous";   # name is now "Anonymous"
+
+name = "Alice";
+name ||= "Anonymous";   # name stays "Alice"
+
+# ??=  Assign only if the current value is null
+port = null;
+port ??= 8080;          # port is now 8080
+
+flag = false;
+flag ??= true;          # flag stays false (only null triggers ??=)
+
+# &&=  Assign only if the current value is truthy
+user = {"name": "Alice"};
+user &&= load_full_profile(user);  # only runs when user is truthy
+
+# Common idiom: lazy default for hash keys
+cache = {};
+cache["key"] ||= expensive_lookup();   # compute once, reuse on repeat
+```
+
+| Operator | Equivalent to            | Use when                                    |
+|----------|--------------------------|---------------------------------------------|
+| `a ||= b` | `a = a || b`            | You want a fallback for any falsy value — `0` and `""` included |
+| `a &&= b` | `a = a && b`            | You want to update only when already set    |
+| `a ??= b` | `a = a ?? b`            | You want a default only for `null` (keeps `false`/`0`) |
+
+The right-hand side is **not evaluated** when the condition fails, so it's
+safe to use expensive expressions on the right. Nothing is written either: on a
+set field `@total ||= 0` is a single read, a value object's field can be tested
+this way without tripping its immutability, and `obj.label ||= v` on a getter
+does not copy the getter's result into a field.
+
+### Comparison Operators
+
+```soli
+x = 5;
+y = 10;
+
+# Equality
+print(x == y);   # false
+print(x != y);   # true
+
+# Ordering
+print(x < y);    # true
+print(x <= y);   # true
+print(x > y);    # false
+print(x >= y);   # false
+
+# String comparison
+print("apple" == "apple");  # true
+print("apple" < "banana");  # true (lexicographic)
+
+# Array comparison (element-wise)
+print([1, 2, 3] == [1, 2, 3]);  # true
+print([1, 2] < [1, 2, 3]);      # true (shorter is "less")
+```
+
+### Logical Operators
+
+```soli
+age = 25;
+has_license = true;
+is_weekend = false;
+
+# AND - both conditions must be true
+if age >= 18 && has_license
+  print("Can drive");
+end
+
+# OR - at least one condition must be true
+if is_weekend || is_holiday
+  print("Day off!");
+end
+
+# NOT - negates the condition
+if !is_raining
+  print("No umbrella needed");
+end
+
+# Chained conditions
+score = 85;
+if score >= 90 && attendance >= 80
+  print("Grade: A");
+elsif score >= 80 || extra_credit > 10
+  print("Grade: B");
+end
+```
+
+### String Operations
+
+```soli
+# Concatenation
+greeting = "Hello, " + "World!";    # "Hello, World!"
+message = "Value: " + 42;           # "Value: 42" (auto-conversion)
+path = "/home/" + "user";           # "/home/user"
+
+# Appending to a variable is linear. `buf = buf + piece`, `buf += piece` and
+# `buf << piece` grow that binding's buffer when nothing else still shares it —
+# for any piece (a literal, an interpolation, a call) and for a variable a
+# closure captured. A second variable that already holds the old string is
+# left unchanged. 100,000 appends of "<li>#{i}</li>" take ~20 ms, not ~1.3 s.
+buf = ""
+buf += "ab"
+buf = buf + "c"
+buf << "d"                          # "abcd"
+buf << "<li>#{buf.length}</li>"     # any string piece
+
+# `<<` onto a string takes a string, and needs a plain variable: on a field or
+# a hash entry it raises. Use `+=` there (`@html += piece`, `h["k"] += piece`).
+# The variable is read before the piece is computed, as with `+`.
+
+# String methods
+text = "  Hello, World!  ";
+print(text.trim());        # "Hello, World!" (removes whitespace)
+print(text.upper());       # "  HELLO, WORLD!  "
+print(text.lower());       # "  hello, world!  "
+print(text.len());         # 18
+
+# Substring operations
+s = "Hello, World!";
+print(s.sub(0, 5));        # "Hello" (from index 0, length 5)
+print(s.find("World"));    # 7 (index of first occurrence)
+print(s.contains("Hello"));  # true
+print(s.contains?("Hello")); # true — `contains?` is `contains`, named as a predicate
+print(s.starts_with("Hell"));  # true
+print(s.ends_with("!"));      # true
+print(s.casecmp?("hello, world!"));  # true (case-insensitive equality)
+
+# Indexing counts characters, never bytes; a negative index counts from the end
+print("héllo"[1]);         # "é"
+print("héllo"[-1]);        # "o"
+# Past either end it raises: Index out of bounds: 5 (length 5) — in characters
+print("héllo"[5] rescue "none");  # "none"
+
+# String transformation
+snake_case = "HelloWorld".snake_case();  # "hello_world"
+camel_lower = "hello_world".camelize();      # "helloWorld" (lower-camel)
+camel_upper = "hello_world".camelize(true);  # "HelloWorld" (PascalCase)
+slug = "Café & Restaurant".slugify;    # "cafe-restaurant" (lowercases, folds accents, hyphenates)
+entities = "été·".html_entities();     # "&#233;t&#233;&#183;" (non-ASCII -> numeric HTML entities, ASCII untouched)
+
+# Truncation counts characters, suffix included (default "..."), and never cuts
+# a character in half
+"hello world".truncate(8)         # "hello..."
+"hello world".truncate(8, "~")    # "hello w~"
+"héllo wörld".truncate(8)         # "héllo..."
+"日本語テキスト".truncate(4, "…")  # "日本語…"
+"hi".truncate(10)                 # "hi" (already fits: unchanged)
+
+# Numeric conversion. `to_i` takes an optional radix from 2 to 36; the
+# conventional 0x / 0o / 0b prefixes are accepted.
+print("ff".to_i(16));      # 255
+print("1010".to_i(2));     # 10
+print("-ff".to_i(16));     # -255
+print("4.88".to_i);        # 4   (base 10 is lenient; other bases parse strictly)
+print("nope".to_i);        # 0
+
+# Character-set variants
+print("aaabbb".squeeze());       # "ab"   (collapse every run)
+print("aaabbb".squeeze("a"));    # "abbb" (collapse only runs of "a")
+print("prefix-x".delete_prefix("prefix-"));  # "x"
+print("x.rb".delete_suffix(".rb"));          # "x"
+print("abc".ascii_only?());      # true
+print("café".ascii_only?());     # false
+
+# First character (Ruby's String#chr) — a character, never half a multi-byte one
+print("abc".chr());        # "a"
+print("".chr());           # ""   (empty string, not an error)
+print("éx".chr());         # "é"
+
+# String successor
+next_id = "a".succ;    # "b" (increments with carry, wraps z->aa, 9->10)
+next_id = "9".succ;    # "10"
+next_id = "z".next;    # "aa" (.next is alias for .succ)
+
+# String interpolation
+name = "World";
+greeting = "Hello #{name}!";           # "Hello World!"
+a = 2;
+b = 3;
+result = "Sum is #{a + b}";             # "Sum is 5"
+first = "John";
+last = "Doe";
+full = "#{first} #{last}";              # "John Doe"
+text = "hello";
+upper = "Upper: #{text.upper()}";        # "Upper: HELLO"
+items = ["Alice", "Bob"];
+first_item = "First: #{items[0]}";       # "First: Alice"
+person = {"name": "Charlie"};
+person_name = "Name: #{person["name"]}"; # "Name: Charlie"
+```
+
+### Type Coercion
+
+```soli
+# Int to Float in mixed arithmetic
+let result = 5 + 3.0;      # result is Float: 8.0
+let price = 10 / 3;        # 3.3333333333333335 (float division)
+
+# Explicit conversion
+let str_num = "42";
+let num = int(str_num);    # 42
+let f = float("3.14");     # 3.14
+
+let n = 123;
+let s = str(n);            # "123" (any type to string)
+```
+
+### Null-Safe Operations
+
+```soli
+user = {"name": "Alice", "email": null};
+
+# Traditional null check
+email = user["email"];
+if email == null
+  email = "unknown";
+end
+
+# Null coalescing operator
+display_email = user["email"] ?? "unknown";
+
+# Chaining with null values
+city = user["address"]["city"] ?? "Unknown City";
+# If any key in the chain is null/missing, returns "Unknown City"
+
+# Safe navigation operator (&.)
+# Access properties or call methods on values that might be null
+user = get_user()  # might return null
+
+name = user&.name              # null if user is null, otherwise user.name
+city = user&.address&.city     # chain for nested access
+greeting = user&.greet()       # null if user is null, otherwise calls greet()
+display = user&.name ?? "Anon" # combine with ?? for defaults
+```
+
+---
+
+## Control Flow
+
+### If/Else Statements
+
+```soli
+age = 18;
+
+# Simple if
+if age >= 18
+  print("Adult");
+end
+
+# If-else
+score = 75;
+if score >= 60
+  print("Pass");
+else
+  print("Fail");
+end
+
+# Else-if chain
+grade = 85;
+let letter;
+if grade >= 90
+  letter = "A";
+elsif grade >= 80
+  letter = "B";
+elsif grade >= 70
+  letter = "C";
+elsif grade >= 60
+  letter = "D";
+else
+  letter = "F";
+end
+print(letter);  # "B"
+
+# Nested conditions
+is_weekend = true;
+is_holiday = false;
+has_plans = true;
+
+if is_weekend
+  if is_holiday
+    print("Holiday vacation!");
+  elsif has_plans
+    print("Busy with plans");
+  else
+    print("Relaxing at home");
+  end
+end
+```
+
+### Unless
+
+`unless cond … end` runs the body when `cond` is falsy — the inverse of `if`. It is a real statement, not a rewrite of `if !cond`, so `unless a || b` keeps that meaning (and `soli fmt` keeps the `unless` keyword).
+
+```soli
+unless user.admin?
+  halt(403, "Forbidden")
+end
+
+# else is allowed; elsif is not
+unless cart.empty?
+  checkout()
+else
+  redirect("/cart")
+end
+
+# short bodies still format as postfix
+return cached unless cached.nil?
+```
+
+Optional `then` works the same as on `if`: `unless ready then wait() end`.
+
+### The `then` Keyword
+
+The `then` keyword is an **optional** separator between the condition and the body of `if`, `elsif`, and `unless` statements. It improves readability, especially for single-line conditionals.
+
+```soli
+# Multi-line with then
+if age >= 18 then
+  print("Adult")
+end
+
+# Single-line with then
+if user != null then print("Welcome") end
+
+# Works with elsif
+if x > 100 then
+  print("big")
+elsif x > 10 then
+  print("medium")
+else
+  print("small")
+end
+
+# Parentheses and then can be combined
+if (score >= 90) then
+  grade = "A"
+end
+```
+
+> **Note:** `then` is purely syntactic sugar. Both `if condition then ... end` and `if condition ... end` are equivalent. Parentheses around the condition are also optional.
+
+### While Loops
+
+```soli
+# Basic while loop
+i = 0;
+while i < 5
+  print("Count: " + str(i));
+  i = i + 1;
+end
+# Output:
+# Count: 0
+# Count: 1
+# Count: 2
+# Count: 3
+# Count: 4
+
+# While with complex condition
+data = [1, 2, 3, 4, 5];
+sum = 0;
+idx = 0;
+while idx < len(data) && data[idx] < 4
+  sum = sum + data[idx];
+  idx = idx + 1;
+end
+print("Sum: " + str(sum));  # 6 (1+2+3)
+
+# Do-while equivalent (infinite `while` + `break`)
+count = 0;
+while true
+  count = count + 1;
+  print("Iteration: " + str(count));
+  break if count >= 3;
+end
+```
+
+`break` exits the innermost enclosing loop immediately. It works in both `while`
+and `for` loops, propagates out of nested blocks, `if` branches and
+`try`/`catch` (a `finally` block still runs before the loop exits), and accepts
+postfix conditions — `break if cond` / `break unless cond`.
+
+A `break` inside a lambda or function body does **not** break an outer loop; it
+is absorbed at the function boundary.
+
+### For Loops
+
+```soli
+# Iterate over array
+let fruits = ["apple", "banana", "cherry"];
+for fruit in fruits
+  print(fruit);
+end
+# Output: apple, banana, cherry
+
+# Iterate with index — element first, then index variable
+for fruit, i in fruits
+  print(str(i) + ": " + fruit);
+end
+# Output:
+# 0: apple
+# 1: banana
+# 2: cherry
+
+# Iterate over a string: one character (a one-character String) at a time,
+# not one byte — "é" and "😀" are single steps
+for ch, i in "héllo"
+  print("#{i}: #{ch}")  # 0: h, 1: é, 2: l, 3: l, 4: o
+end
+
+# Iterate with range
+for i in range(0, 5)
+  print(i);  # 0, 1, 2, 3, 4
+end
+
+# Or with the range operator, which also stops before its end. A loop counts
+# through a..b, in parentheses or not, without building an array first
+# (range() builds one), so it has no SOLI_MAX_RANGE_LEN limit either.
+for i in 0..5
+  print(i)  # 0, 1, 2, 3, 4
+end
+
+# Range with step
+for i in range(0, 10, 2)
+  print(i);  # 0, 2, 4, 6, 8
+end
+
+# Nested loops
+for i in range(1, 4)
+  for j in range(1, 4)
+    print(str(i) + " x " + str(j) + " = " + str(i * j));
+  end
+end
+# Output: Multiplication table 1x1 through 3x3
+
+# Iterate backwards
+let arr = [1, 2, 3, 4, 5];
+for i in range(len(arr) - 1, -1, -1)
+  print(arr[i]);  # 5, 4, 3, 2, 1
+end
+
+# Break and next
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+let sum = 0;
+for n in numbers
+  if n % 2 == 0
+    next
+  end
+  break if n > 7;  # Stop at first number > 7
+  sum = sum + n;
+end
+print("Sum of odd numbers < 7: " + str(sum));  # 1+3+5 = 9
+```
+
+### Postfix Conditionals
+
+Ruby-style postfix conditionals for concise single statements:
+
+```soli
+x = 10;
+print("big") if (x > 5);
+
+y = 3;
+print("small") unless (y > 5);
+
+# More examples
+status = "active";
+print("Welcome!") if (status == "active");
+print("Account locked") unless (status != "banned");
+
+items = [];
+print("Empty") if (len(items) == 0);
+```
+
+### Ternary Operator
+
+```soli
+# Basic ternary
+x = 10;
+size = x > 5 ? "large" : "small";
+print(size);  # "large"
+
+# Nested ternary
+grade = 85;
+letter = grade >= 90 ? "A"
+      : grade >= 80 ? "B"
+      : grade >= 70 ? "C"
+      : grade >= 60 ? "D"
+      : "F";
+print(letter);  # "B"
+
+# In assignments
+max_val = a > b ? a : b;
+status = is_valid ? "valid" : "invalid";
+```
+
+### Match Expression
+
+Soli's powerful pattern matching (covered in detail in the Pattern Matching section):
+
+```soli
+# Basic match
+x = 42;
+result = match x {
+  42 => "the answer",
+  _ => "something else",
+};
+print(result);  # "the answer"
+
+# Type matching: the type comes first (Int, Float, Bool, String).
+# `Any` keeps the checker from refusing the Int arm of a known String.
+let value: Any = "hello"
+match value {
+  String: s => "String: " + s,
+  Int: n => "Int: " + n.to_s,
+  _ => "Unknown"
+}
+```
+
+### Truthiness
+
+Six values are falsy. Everything else is truthy.
+
+`0.0` is **truthy**, even though `0` is falsy: only the integer zero counts. A
+`Decimal` is always truthy whatever its value, which matters for money —
+`Decimal("0.00")` does not vanish in a condition.
+
+This is closer to Python than to Ruby, where only `false` and `nil` are falsy.
+Two consequences worth knowing: `if xs.length` is a valid emptiness test, and
+`count ||= 10` replaces a zero count rather than only a missing one.
+
+```soli
+# The whole falsy set — there is nothing else
+falsy_values = [false, null, 0, "", [], {}];
+
+# Truthy values (everything else)
+if "hello"
+  print("Non-empty string is truthy");
+end
+
+if [1, 2, 3]
+  print("Non-empty array is truthy");
+end
+
+if 42
+  print("Non-zero number is truthy");
+end
+
+# Practical examples
+config = get_config();
+if config
+  print("Config loaded: " + str(config));
+end
+
+items = get_items() ?? [];
+if len(items) > 0
+  print("Found " + str(len(items)) + " items");
+end
+```
+
+---
+
+## Error Handling
+
+### Try / Catch / Finally
+
+Soli provides `try`/`catch`/`finally` for exception handling, using `end`-delimited blocks (just like `if`, `while`, and `for`). Ruby-style aliases are supported: `begin` for `try`, `rescue` for `catch`, and `ensure` for `finally`. The aliases are interchangeable with the canonical keywords; `soli fmt` normalizes them to `try`/`catch`/`finally`.
+
+```soli
+# Basic try/catch
+try
+  result = 10 / 0;
+catch e
+  print("Error: " + str(e));
+end
+
+# With finally (always runs)
+try
+  data = read_file("config.sl");
+  print(data);
+catch e
+  print("Failed to read file: " + str(e));
+finally
+  print("Cleanup done");
+end
+
+# Try/finally without catch
+try
+  process_data();
+finally
+  close_connection();
+end
+
+# Ruby-style aliases: `begin` for `try`, `rescue` for `catch`, `ensure` for `finally`
+begin
+  risky_operation();
+rescue e
+  print("Error: " + str(e));
+ensure
+  print("Cleanup done");
+end
+```
+
+### What `finally` guarantees
+
+`finally` runs on **every** way out of the `try`, not just the one where the block reaches
+its end — that is the whole reason to write one:
+
+| how the try is left | does `finally` run? |
+|---|---|
+| the block finishes normally | yes |
+| the try block `return`s | yes, then the return proceeds |
+| a `catch` clause `return`s | yes, then the return proceeds |
+| the try throws and a `catch` handles it | yes |
+| the try throws and **nothing** catches it | yes, then the exception keeps propagating |
+
+So the release always happens, however the function leaves:
+
+```soli
+def with_connection() -> Hash
+  let conn = open_connection()
+  try
+    return conn.query("...")   # finally still runs before this returns
+  finally
+    conn.close()
+  end
+end
+```
+
+A `return` or `throw` inside the `finally` block itself **takes over** from whatever was in
+progress, including discarding an exception that was propagating. This matches Ruby's
+`ensure`, and it is worth avoiding for that reason — a `return` in a `finally` silently
+swallows errors:
+
+```soli
+def swallows() -> String
+  try
+    throw "the error is lost"
+  finally
+    return "this wins"   # the throw is discarded
+  end
+end
+```
+
+A `rescue` that opens a new line inside a `begin`/`try` body is always a catch
+clause. The postfix `rescue` modifier (`expr rescue fallback`) is unaffected — it
+still works inline, including inside a `begin` body:
+
+```soli
+begin
+  value = (10 / 0) rescue 99   # postfix modifier: value becomes 99
+rescue e
+  value = -1
+end
+```
+
+### Catch Variable Syntax
+
+The catch variable can be written with or without parentheses:
+
+```soli
+# Both are equivalent
+catch e
+  print(e);
+end
+
+catch (e)
+  print(e);
+end
+```
+
+### Throwing Exceptions
+
+Use `throw` to raise an exception:
+
+```soli
+def divide(a: Int, b: Int) -> Int
+  if b == 0
+    throw "Division by zero";
+  end
+  a / b
+end
+
+try
+  result = divide(10, 0);
+catch e
+  print("Caught: " + str(e));  # "Caught: Division by zero"
+end
+```
+
+### Typed Catch
+
+Catch specific error types by class name. Multiple `catch` blocks are tried in order:
+
+```soli
+class NotFoundError
+  message: String
+  new(msg: String)
+    this.message = msg
+  end
+end
+
+class ValidationError
+  message: String
+  new(msg: String)
+    this.message = msg
+  end
+end
+
+try
+  throw NotFoundError.new("User not found")
+catch NotFoundError e
+  print("404: " + e.message)
+catch ValidationError e
+  print("Invalid: " + e.message)
+catch e
+  print("Unknown: " + str(e))
+end
+```
+
+**Subclass matching:** A typed catch walks the inheritance chain, so `catch AppError` also catches subclasses of `AppError`:
+
+```soli
+class AppError
+  message: String
+  new(msg: String)
+    this.message = msg
+  end
+end
+
+class NotFoundError < AppError
+  new(msg: String)
+    super(msg)
+  end
+end
+
+try
+  throw NotFoundError.new("missing")
+catch AppError e
+  print("App error: " + e.message)  # Catches NotFoundError too
+end
+```
+
+**Rules:**
+- Typed catches only match class instances (strings, ints, etc. won't match a typed catch)
+- Put more specific types first — catches are tried in order
+- A bare `catch e` catches everything (catch-all)
+- If no typed catch matches and there is no catch-all, the exception re-throws to the outer scope
+
+### Error classes: `Error` and `DomainError`
+
+`Error` is the built-in base for thrown objects. It takes a message and optional
+details, and `to_s` gives `"ClassName: message"`:
+
+```soli
+class InsufficientFunds < DomainError
+end
+
+try
+  throw InsufficientFunds.new("balance too low", {"needed": 30})   # or: new InsufficientFunds(…)
+catch DomainError e
+  print(e.message)            # balance too low
+  print(e.details["needed"])  # 30
+  print(e.to_s)               # InsufficientFunds: balance too low
+end
+```
+
+A subclass that needs more fields keeps its own constructor and passes the
+message up with `super`:
+
+```soli
+class Overdrawn < DomainError
+  amount: Int
+
+  new(amount: Int)
+    super("overdrawn by #{amount}", {"amount": amount})
+    @amount = amount
+  end
+end
+```
+
+Built in: `Error`, with `ValueError`, `TypeError`, `KeyError`, `IndexError` and
+`RuntimeError` under it, and `DomainError` — the base for errors a domain rule
+raises, as opposed to a bug — with `InvariantViolation` under it. Errors Soli
+itself raises (a missing method, a failed query) still reach `catch` as strings,
+so a typed catch does not match them; a bare `catch e` does.
+
+**Uncaught in a served app, a `DomainError` is a response, not a crash:** the
+request answers `422` with the error page showing its message (an
+`app/views/errors/422.html.slv` receives it as `message`). A class picks
+another status with `static http_status`. Like a `find` miss, it writes no
+error block to the log and the action stays on the VM; any other uncaught
+throw is still a 500.
+
+```soli
+class StaleInvoice < DomainError
+  static http_status: Int = 409
+end
+
+# in an action: answers 409 "invoice changed since you loaded it"
+throw StaleInvoice.new("invoice changed since you loaded it")
+```
+
+### What `catch` receives
+
+`throw` carries a **value**, not a message, and that value arrives at `catch` intact — no
+matter how many function calls it crossed on the way, including a `throw` from inside a
+callback given to `map`, `filter`, `each`, `reduce`, `sort_by` or `times`. So structured
+errors work:
+
+```soli
+def find_user(id: Int) -> Hash
+  throw {"code": 404, "message": "no such user"} if id < 1
+  {"id": id}
+end
+
+try
+  find_user(0)
+catch e
+  print(e["code"])     # 404 — a hash, not the text of one
+  print(e["message"])  # no such user
+end
+```
+
+Any value can be thrown — a hash, an array, an int, a class instance — and it is the same
+value when caught:
+
+```soli
+try
+  throw [1, 2, 3]
+catch e
+  print(e[1])  # 2
+end
+```
+
+The one exception is an error Soli itself raised (a division by zero, an index out of
+bounds, a failed `Model.find`). Those have no user-supplied value, so `catch` binds their
+message as a string:
+
+```soli
+try
+  let numbers = [1]
+  print(numbers[99])
+catch e
+  print(e)  # Index out of bounds: 99 (length 1) at ...
+end
+```
+
+To tell the two apart, check `e.class` — it reads `hash` for your own structured throw and
+`string` for a runtime error:
+
+```soli
+try
+  might_fail()
+catch e
+  if e.class == "hash"
+    print("app error #{e["code"]}")
+  else
+    print("runtime error: #{e}")
+  end
+end
+```
+
+### Brace Syntax
+
+Try/catch also supports brace-delimited blocks:
+
+```soli
+try {
+  result = risky_operation();
+} catch (e) {
+  print("Error: " + str(e));
+} finally {
+  cleanup();
+}
+```
+
+### Depth Limits
+
+To keep a runaway program from aborting the process, recursive constructs return an error past a fixed depth instead of overflowing the stack:
+
+- **Source nesting** — expressions, statements, match patterns, and type annotations may nest at most 64 levels deep. Deeper input produces a parse error (`... nested too deeply`), not a crash.
+- **Call recursion** — a Soli-to-Soli call chain is capped (32 frames in debug builds, 256 in release). Exceeding it raises a catchable runtime error: `call stack too deep (256 frames) — unbounded recursion?`.
+- **Templates** — `<% if %>`/`<% for %>`/`content_for`/builder blocks and partial/component includes are capped at 64 levels of nesting; a partial that renders itself fails with a clean render error.
+- **JSON** — converting or serializing a structure more than 512 levels deep returns an error.
+
+All of these surface as ordinary errors your code can catch — never as process aborts.
+
+---
+
+## Functions
+
+### Function Declaration
+
+Functions are declared with the `fn` keyword. You can also use `def` as an alias (Ruby-style).
+
+```soli
+# No parameters — parentheses are optional
+def say_hello
+  print("Hello!");
+end
+
+# Equivalent with explicit empty parentheses
+def say_hello()
+  print("Hello!");
+end
+
+# `def` works exactly like `fn`
+def greet(name: String)
+  print("Hello, " + name + "!");
+end
+
+# With return value
+def add(a: Int, b: Int) -> Int
+  a + b
+end
+
+# Void function (explicit)
+def log_message(msg: String)
+  print("[LOG] " + msg);
+end
+
+# With type annotations on return
+def multiply(a: Float, b: Float) -> Float
+  a * b
+end
+```
+
+### Function Examples
+
+```soli
+# Calculate factorial
+def factorial(n: Int) -> Int
+  if n <= 1
+    return 1;
+  end
+  n * factorial(n - 1)
+end
+
+print(factorial(5));  # 120
+
+# Calculate Fibonacci
+def fibonacci(n: Int) -> Int
+  return n if n <= 1
+  fibonacci(n - 1) + fibonacci(n - 2)
+end
+
+print(fibonacci(10));  # 55
+
+# Check if a number is prime
+def is_prime(n: Int) -> Bool
+  if n < 2
+    return false;
+  end
+  if n == 2
+    return true;
+  end
+  if n % 2 == 0
+    return false;
+  end
+  i = 3;
+  while i * i <= n
+    if n % i == 0
+      return false;
+    end
+    i = i + 2;
+  end
+  true
+end
+
+# Find maximum in array
+def find_max(arr: Int[]) -> Int
+  if len(arr) == 0
+    return 0;  # or panic for empty array
+  end
+  max = arr[0];
+  for i in range(1, len(arr))
+    if arr[i] > max
+      max = arr[i];
+    end
+  end
+  max
+end
+```
+
+`factorial`, `fibonacci` and `is_prime` are typed `Int`/`Bool` end to end and only do arithmetic, branches and loops, so a script compiles them to machine code when it loads — see [Native Kernels](native-kernels.md).
+
+### Early Returns
+
+```soli
+def process_user(user: Hash) -> Hash
+  # Validate required fields
+  if !has_key(user, "name")
+    return {"error": "Name is required"};
+  end
+  if !has_key(user, "email")
+    return {"error": "Email is required"};
+  end
+
+  # Validate email format
+  email = user["email"];
+  if !email.contains("@")
+    return {"error": "Invalid email format"};
+  end
+
+  # Process user data
+  processed = user;
+  processed["status"] = "active";
+  processed["created_at"] = DateTime.utc().to_iso();
+
+  processed
+end
+```
+
+### Higher-Order Functions
+
+Functions can accept other functions as parameters and return functions:
+
+```soli
+# Function as parameter
+def apply(x: Int, f: (Int) -> Int) -> Int
+  f(x)
+end
+
+def double(x: Int) -> Int
+  x * 2
+end
+
+def square(x: Int) -> Int
+  x * x
+end
+
+result = apply(5, double);   # 10
+squared = apply(5, square);  # 25
+
+# Passing anonymous functions
+def transform_array(arr: Int[], transformer: (Int) -> Int) -> Int[]
+  result = [];
+  for item in arr
+    push(result, transformer(item));
+  end
+  result
+end
+
+numbers = [1, 2, 3, 4, 5];
+doubled = transform_array(numbers, fn(x) x * 2);  # [2, 4, 6, 8, 10]
+
+# Function that returns a function
+def multiplier(factor: Int) -> (Int) -> Int
+  def closure(x: Int) -> Int
+    x * factor
+  end
+  closure
+end
+
+times_two = multiplier(2);
+print(times_two(5));   # 10
+print(times_two(10));  # 20
+
+times_three = multiplier(3);
+print(times_three(5));  # 15
+```
+
+### Closures
+
+```soli
+# Counter using closure
+def make_counter() -> () -> Int
+  let count = 0;
+  def counter() -> Int
+    count = count + 1;
+    count
+  end
+  counter
+end
+
+let counter1 = make_counter();
+let counter2 = make_counter();
+
+print(counter1());  # 1
+print(counter1());  # 2
+print(counter1());  # 3
+
+print(counter2());  # 1
+print(counter2());  # 2
+
+# Closure capturing variables
+def make_greeter(greeting: String) -> (String) -> String
+  def greet(name: String) -> String
+    greeting + ", " + name + "!"
+  end
+  greet
+end
+
+let say_hello = make_greeter("Hello");
+let say_hola = make_greeter("Hola");
+
+print(say_hello("Alice"));  # "Hello, Alice!"
+print(say_hola("Bob"));     # "Hola, Bob!"
+```
+
+### Default Parameters
+
+```soli
+def greet(name: String, greeting: String = "Hello") -> String
+  greeting + ", " + name + "!"
+end
+
+print(greet("Alice"));              # "Hello, Alice!"
+print(greet("Bob", "Hi"));          # "Hi, Bob!"
+print(greet("Charlie", "Welcome")); # "Welcome, Charlie!"
+
+# Optional parameters
+def create_user(name: String, email: String = null, role: String = "user") -> Hash
+  user = {"name": name, "role": role};
+  if email != null
+    user["email"] = email;
+  end
+  user
+end
+
+user1 = create_user("Alice");
+user2 = create_user("Bob", "bob@example.com");
+user3 = create_user("Charlie", "charlie@example.com", "admin");
+```
+
+### Named Parameters
+
+You can call functions using named parameters with the colon syntax:
+
+```soli
+def configure(host: String = "localhost", port: Int = 8080, debug: Bool = false) -> Void
+  print("Connecting to #{host}:#{port} with debug=#{debug}");
+end
+
+configure();                              # Using all defaults
+configure(host: "example.com");           # Only specify host
+configure(port: 3000, debug: true);       # Named parameters in any order
+configure("example.com", port: 443);     # Mixed: positional then named
+configure(host: "api.example.com", port: 443, debug: true);  # All named
+```
+
+#### On Methods
+
+Labels work the same on a method call, and the receiver stays `this`: an
+instance method, `@helper(k: v)`, the bare private helper, a `static def`, and
+safe navigation (a nil receiver evaluates no argument):
+
+```soli
+class Invoice
+  total: Int
+
+  new(total: Int)
+    @total = total
+  end
+
+  def with_fee(fee: Int = 5, times: Int = 1) -> Int
+    @total + fee * times
+  end
+
+  def summary -> String
+    "#{@with_fee(times: 3)} with fees, #{_due(days: 30)}"
+  end
+
+  static def zero(note: String = "")
+    this.new(total: 0)
+  end
+
+  private
+
+  def _due(days: Int) -> String
+    "due in #{days} days"
+  end
+end
+
+invoice = Invoice.new(total: 100)
+print(invoice.with_fee(fee: 10))       # 110
+print(invoice.summary)                 # 115 with fees, due in 30 days
+print(Invoice.zero(note: "draft").total)  # 0
+missing = nil
+print(missing&.with_fee(fee: 10))      # null
+```
+
+A block passed along with labels (`list.add(item: x) do … end`) reaches the
+method's `&block` parameter; a method without one ignores it. A builtin method
+receives the labels as one trailing options hash, and `method_missing` gets
+them as a hash after the positional arguments.
+
+#### Ruby-Style Calls Without Parentheses
+
+You can also call methods on objects without parentheses, using Ruby-style syntax:
+
+```soli
+# With parentheses (standard)
+user.update(name: "Bob", age: 30);
+user.full_name();
+puts("Hello world");
+
+# Without parentheses (Ruby-style)
+user.update name: "Bob", age: 30;
+user.full_name;
+puts "Hello world";
+```
+
+> **Bare static model calls are the exception (current limitation).**
+> `Model.new`, `Model.delete_all` and `Model.with_deleted` without
+> parentheses return the function and do nothing: write `Model.new()`,
+> `Model.delete_all()`. Instance writes are fine bare — `record.save` runs
+> the same lifecycle callbacks as `record.save()`.
+
+This works for:
+- Method calls on objects with named arguments: `obj.method arg: value`
+- Method calls on objects without arguments: `obj.method`
+- Standalone function calls with named arguments: `fn_name arg: value`
+
+#### Rules
+
+1. Named arguments use the colon syntax: `parameter_name: value`
+2. Named arguments must come after all positional arguments
+3. Duplicate named arguments cause a runtime error
+4. Unknown parameter names cause a runtime error
+5. Default values are used for any parameters not provided
+
+```soli
+# Error: positional argument after named argument
+configure(port: 3000, "example.com");  # Parser error
+
+# Error: duplicate named argument
+configure(port: 3000, port: 8080);     # Runtime error
+
+# Error: unknown parameter name
+configure(unknown: 123);               # Runtime error
+```
+
+#### Use Cases
+
+Named parameters are useful when:
+
+- A function has many parameters with defaults
+- You want to skip optional parameters in the middle
+- Code readability is important (named params are self-documenting)
+- API calls where parameter order might change
+
+```soli
+def http_request(
+  method: String = "GET",
+  url: String,
+  headers: Hash = {},
+  body: Any = null,
+  timeout: Int = 30
+) { ... }
+
+# Clear and readable - specify only what changes
+http_request(
+  method: "POST",
+  url: "https://api.example.com/users",
+  body: {"name": "Alice"}
+);
+```
+
+### Variadic Functions
+
+```soli
+def sum(numbers: Int[]) -> Int
+  total = 0;
+  for n in numbers
+    total = total + n;
+  end
+  total
+end
+
+print(sum([1, 2, 3, 4, 5]));  # 15
+
+# Using spread operator
+nums = [1, 2, 3];
+print(sum(nums));             # 6
+print(sum([...nums, 4, 5]));  # 15
+
+# Variadic-like with array
+def format_list(items: String[], separator: String = ", ", final_separator: String = "and") -> String
+  len = len(items);
+  if len == 0
+    return "";
+  end
+  if len == 1
+    return items[0];
+  end
+  if len == 2
+    return items[0] + " " + final_separator + " " + items[1];
+  end
+  result = "";
+  for i in range(0, len - 1)
+    result = result + items[i] + separator;
+  end
+  result + final_separator + " " + items[len - 1]
+end
+
+print(format_list(["apple", "banana", "cherry"]));  # "apple, banana and cherry"
+print(format_list(["one", "two"]));                 # "one and two"
+```
+
+### Universal Methods on Function Values
+
+Functions are first-class values, and the universal predicates available on every other type work on them too. Useful in defensive view partials where a local might resolve to a function, a string, or be undefined.
+
+```soli
+f = fn(x) { x + 1 };
+
+f.nil?       # false — a function value is never null
+f.blank?     # false
+f.present?   # true
+f.class      # "Function"
+f.inspect    # "<function>"
+```
+
+**Zero-arg caveat:** a zero-parameter function auto-invokes on bare access. `let g = fn() { 42 }; g.class` evaluates `g()` first, so `.class` sees the return value, not the function itself. Use a multi-arg function if you need to inspect the function value.
+
+---
+
+## Collections
+
+### Arrays
+
+#### Creating Arrays
+
+```soli
+# Basic array creation
+numbers = [1, 2, 3, 4, 5];
+names = ["Alice", "Bob", "Charlie"];
+mixed = [1, "two", 3.0, true];
+
+# Type-annotated arrays
+let scores: Int[] = [95, 87, 92, 88, 90];
+let words: String[] = [];  # Empty array
+
+# Array from range
+range_arr = range(1, 10);  # [1, 2, 3, 4, 5, 6, 7, 8, 9]
+step_arr = range(0, 10, 2);  # [0, 2, 4, 6, 8]
+
+# Initialize with default value
+zeros = [];
+for _ in range(0, 5)
+  push(zeros, 0);
+end  # [0, 0, 0, 0, 0]
+
+# Percent literal arrays - quick string/symbol/number arrays (with decimals)
+words = %w[foo bar baz];    # ["foo", "bar", "baz"]
+keys = %i[get post put];    # [:get, :post, :put]
+nums = %n[1 2.5 3.5D];     # [1, 2.5, 3.5]
+empty_w = %w[];            # []
+empty_i = %i[];            # []
+empty_n = %n[];            # []
+```
+
+#### Percent Literal Arrays
+
+Soli provides `%w[]`, `%i[]`, and `%n[]` as sugar syntax for creating arrays of strings, symbols, or numbers without quotes.
+
+```soli
+# %w[] - Array of strings
+words = %w[demo test production];
+words;  # ["demo", "test", "production"]
+
+# %i[] - Array of symbols
+methods = %i[get post put delete];
+methods;  # [:get, :post, :put, :delete]
+
+# %n[] - Array of numbers (integers, floats, and decimals with D suffix)
+numbers = %n[1 2.5 3.5D 4];
+numbers;  # [1, 2.5, 3.5, 4]
+
+# Equivalent to regular arrays
+%w[a b c] == ["a", "b", "c"]
+%i[a b c] == [:a, :b, :c]
+%n[1 2 3] == [1, 2, 3]
+%n[1.5D 2.5D] == [1.5D, 2.5D]
+```
+
+Elements are separated by whitespace (spaces, tabs, or newlines). No commas are needed.
+
+```soli
+# Works with newlines for readability
+const HTTP_METHODS = %i[
+  get
+  post
+  put
+  delete
+];
+
+# Number arrays useful for coordinates, indices, etc.
+const COORDINATES = %n[0 0 10 10];
+tags = %w[ruby javascript python elixir];
+```
+
+#### Array Access and Modification
+
+```soli
+fruits = ["apple", "banana", "cherry", "date"];
+
+# Access elements
+print(fruits[0]);   # "apple"
+print(fruits[1]);   # "banana"
+print(fruits[-1]);  # "date" (last element)
+print(fruits[-2]);  # "cherry"
+
+# Modify elements
+fruits[0] = "apricot";
+print(fruits[0]);  # "apricot"
+
+# Out of bounds returns null
+print(fruits[100]);  # null
+
+# Slicing
+def slice(arr: Array, start: Int, end: Int) -> Array {
+  result = [];
+  actual_end = end;
+  if (end > len(arr)) {
+    actual_end = len(arr);
+  }
+  for (i in range(start, actual_end)) {
+    push(result, arr[i]);
+  }
+  result
+}
+
+print(slice(fruits, 1, 3));  # ["banana", "cherry"]
+```
+
+#### Array Methods
+
+```soli
+numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+# map - transform each element
+doubled = numbers.map(fn(x) x * 2);
+print(doubled);  # [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+
+# filter - keep elements matching condition
+evens = numbers.filter(fn(x) x % 2 == 0);
+print(evens);  # [2, 4, 6, 8, 10]
+
+# each - iterate with side effects
+numbers.each(fn(x) print(x));  # Prints each number
+
+# each_with_index - with a block, (value, index); bare, the [value, index] pairs
+["a", "b"].each_with_index do |letter, i|
+  print("#{i}: #{letter}")
+end
+labels = ["a", "b"].each_with_index.map { |letter, i| "#{i}:#{letter}" }  # ["0:a", "1:b"]
+
+# A block with two or more parameters destructures an array element, as in Ruby
+[["Ann", 31], ["Bob", 42]].map { |name, age| "#{name} (#{age})" }  # ["Ann (31)", "Bob (42)"]
+
+# A block may declare fewer parameters than the iterator passes and gets only those.
+# This holds for every iterator (times/upto/downto, the array and hash methods).
+3.times { print("hi") }                                # no index
+["a", "b"].each_with_index { |letter| print(letter) }  # the element, without its index
+numbers.each { print("tick") }                         # once per element
+# One exception: a one-parameter `reduce` callback gets the [acc, x] pair, just as
+# a one-parameter hash block gets [key, value]. A direct call still checks arity:
+# `f = fn() { 1 }` and then `f(5)` raises "expected 0, got 1".
+
+# reduce - accumulate to single value
+sum = numbers.reduce(fn(acc, x) acc + x, 0);  # 55
+product = numbers.reduce(fn(acc, x) acc * x, 1);  # 3628800
+
+# find - first matching element
+first_even = numbers.find(fn(x) x % 2 == 0);  # 2
+
+# find_index - index of first matching element
+idx = numbers.find_index(fn(x) x > 5);  # 5
+
+# every - check if all elements match
+all_positive = numbers.every(fn(x) x > 0);  # true
+
+# some - check if any element matches
+has_large = numbers.some(fn(x) x > 8);  # true
+
+# dig - safe nested access (returns null on any miss, no errors)
+data = [
+  { "user": { "name": "Alice", "posts": [ { "title": "Hello" } ] } },
+  { "user": { "name": "Bob" } }
+]
+print(data.dig(0, "user", "name"));           # "Alice"
+print(data.dig(0, "user", "posts", 0, "title")); # "Hello"
+print(data.dig(1, "user", "posts", 0));       # null (safe, no crash)
+print([10, 20, 30].dig(-1));                  # 30 (negative index supported)
+
+# pluck - extract one or more fields (very useful on arrays of hashes)
+posts = [
+  { "id": 1, "title": "Hello" },
+  { "id": 2, "title": "World" }
+]
+print(posts.pluck("title"));           # ["Hello", "World"]          (single field → flat array)
+print(posts.pluck("id", "title"));     # [[1, "Hello"], [2, "World"]] (multiple → array of arrays)
+
+# --- Field-keyed aggregates ---
+# Each names the field as *data*, so the whole traversal stays in Rust and never
+# re-enters the interpreter. The hand-written equivalent
+# (`rows.reduce(fn(a, r) { return a + r["n"] }, 0)`) calls back into Soli once per
+# element and measures ~235x slower on 20k rows. Reach for these first.
+
+orders = [
+  { "sku": "a", "cents": 1250, "status": "paid" },
+  { "sku": "b", "cents": 900,  "status": "open" },
+  { "sku": "c", "cents": 350,  "status": "paid" }
+]
+
+# sum_by - total a numeric field. Ints stay integral (money as cents);
+# promotes to Float only once a float is seen. Missing fields are skipped.
+print(orders.sum_by("cents"));        # 2500
+print(orders.sum_by("nope"));         # 0
+
+# group_by - field value -> array of records, first-seen key order
+print(orders.group_by("status").keys());        # ["paid", "open"]
+print(orders.group_by("status")["paid"].len()); # 2
+
+# index_by - field value -> record, for O(1) lookups. Last write wins.
+print(orders.index_by("sku")["b"]["cents"]);    # 900
+
+# count_by - field value -> count, for dashboard tallies
+print(orders.count_by("status"));     # {"paid": 2, "open": 1}
+
+# tally - occurrence counts for a flat array (count_by's plain-value sibling)
+print([1, 2, 2, 3].tally());          # {1: 1, 2: 2, 3: 1}
+
+# avg / avg_by - mean, always a Float. An average is a ratio, so integer
+# division would report [2, 3].avg() as 2. Nothing to average is null, never a
+# misleading 0.
+print([2, 3].avg());                  # 2.5
+print(orders.avg_by("cents"));        # 833.3333333333334
+print([].avg());                      # null
+
+# filter_by / find_by - select records by field value, same equality as ==.
+# Same names as the Model methods, so in-memory and database filters read alike.
+print(orders.filter_by("status", "paid").pluck("sku"));  # ["a", "c"]
+print(orders.find_by("status", "open")["sku"]);          # "b"
+print(orders.find_by("status", "void"));                 # null
+
+# uniq_by - one record per distinct field value, keeping the first seen
+print(orders.uniq_by("status").pluck("sku"));            # ["a", "b"]
+
+# max_by / min_by - the *record* holding the extreme value, not the value.
+# Records missing the field are skipped rather than comparing as null; ties
+# keep the first seen.
+print(orders.max_by("cents")["sku"]);  # "a"
+print(orders.min_by("cents")["sku"]);  # "c"
+
+# pick - value(s) from the *first* element only (the “get one” companion to pluck)
+print(posts.pick("title"));      # "Hello"
+print(posts.pick("id", "title")); # [1, "Hello"]
+
+# chunk - split into chunks
+def chunk(arr: Array, size: Int) -> Array[]
+  result = [];
+  current = [];
+  for item in arr
+    push(current, item);
+    if len(current) >= size
+      push(result, current);
+      current = [];
+    end
+  end
+  if len(current) > 0
+    push(result, current);
+  end
+  result
+end
+
+print(chunk(numbers, 3));  # [[1,2,3], [4,5,6], [7,8,9], [10]]
+
+# Chaining methods
+result = numbers
+  .filter(fn(x) x % 2 == 0)   # [2, 4, 6, 8, 10]
+  .map(fn(x) x * x)           # [4, 16, 36, 64, 100]
+  .filter(fn(x) x < 50);      # [4, 16, 36]
+
+print(result);  # [4, 16, 36]
+```
+
+#### Array Functions
+
+```soli
+let arr = [1, 2, 3, 4, 5];
+
+# Length (function or method — .len, .length, .size are all aliases)
+print(len(arr));      # 5
+print(arr.len);       # 5
+print(arr.length);    # 5
+print(arr.size);      # 5
+
+# Push - add element to end
+push(arr, 6);
+print(arr);  # [1, 2, 3, 4, 5, 6]
+
+# Pop - remove and return last element
+let last = pop(arr);
+print(last);  # 6
+print(arr);   # [1, 2, 3, 4, 5]
+
+# Unshift - add element to beginning
+let new_arr = unshift(arr, 0);
+print(new_arr);  # [0, 1, 2, 3, 4, 5]
+
+# Shift - remove and return first element
+let first = shift(arr);
+print(first);  # 0
+
+# Insert at index
+def insert(arr: Array, index: Int, value: Any) -> Array
+  let result = [];
+  for i in range(0, len(arr))
+    if i == index
+      push(result, value);
+    end
+    push(result, arr[i]);
+  end
+  if index >= len(arr)
+    push(result, value);
+  end
+  result
+end
+
+# Reverse
+let reversed = reverse(arr);
+print(reversed);  # [5, 4, 3, 2, 1]
+
+# Sort
+let unsorted = [3, 1, 4, 1, 5, 9, 2, 6];
+let sorted = sort(unsorted);
+print(sorted);  # [1, 1, 2, 3, 4, 5, 6, 9]
+
+# Sort by hash key
+let people = [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}, {"name": "Charlie", "age": 35}];
+let by_age = people.sort_by("age");
+print(by_age);  # Sorted by age: Bob, Alice, Charlie
+
+# Sort by function
+let by_name = people.sort_by(fn(p) p.get("name"));
+print(by_name);  # Sorted by name: Alice, Bob, Charlie
+```
+
+### Hashes
+
+#### Creating Hashes
+
+```soli
+# Basic hash creation
+person = {
+  "name": "Alice",
+  "age": 30,
+  "city": "New York"
+};
+
+# Alternative syntax with =>
+scores = {"Alice" => 95, "Bob" => 87, "Charlie" => 92};
+
+# Nested hashes
+user = {
+  "id": 1,
+  "profile": {
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  "settings": {
+    "theme": "dark",
+    "notifications": true
+  }
+};
+
+# Empty hash
+empty = {};
+
+# Type-annotated hash
+let config: Hash = {
+  "host": "localhost",
+  "port": 8080,
+  "ssl": false
+};
+```
+
+#### Hash Access and Modification
+
+```soli
+person = {"name": "Alice", "age": 30, "city": "Paris"};
+
+# Access values
+print(person["name"]);   # "Alice"
+print(person["age"]);    # 30
+print(person["email"]);  # null (key doesn't exist)
+
+# Modify values
+person["age"] = 31;
+person["country"] = "France";  # Add new key
+
+print(person);  # {name: Alice, age: 31, city: Paris, country: France}
+
+# Delete key
+deleted = delete(person, "city");
+print(deleted);  # Paris
+print(person);   # {name: Alice, age: 31, country: France}
+```
+
+Dot notation reads a key too: `person.name` is `person["name"]`, and a missing key is `nil`. A key named like a hash method is still the key, so `{"size": 2048}.size` is `2048`. The method answers only when the hash has no such key: `{"a": 1}.size` is `1`. Parentheses always call the method:
+
+```soli
+row = {"size": 2048, "key": "abc"}
+row.size          # 2048  — the key
+row.size()        # 2     — Hash#size, the number of entries
+row.key("abc")    # "key" — Hash#key, the first key holding "abc"
+{"a": 1}.size     # 1     — no "size" key, so the method
+```
+
+Both engines follow this rule, so `soli test` and `soli serve` read a row the same way. Some code handles hashes it did not build, such as `params` or a decoded JSON body. There, call the methods with parentheses (`h.keys()`, `h.length()`), or read the keys with brackets, so that a key named like a method cannot answer in the method's place.
+
+#### Hash Methods
+
+Hash methods support two function signatures for iteration:
+
+```soli
+# Two parameters: key and value (recommended)
+h.map(fn(key, value) [key, value * 2])
+
+# One parameter: [key, value] pair array
+h.map(fn(pair) [pair[0], pair[1] * 2])
+```
+
+```soli
+scores = {"Alice": 90, "Bob": 85, "Charlie": 95, "Diana": 88};
+
+# map - transform entries
+# Returns a new hash. The function MUST return [key, value] (exactly 2 elements).
+# Returning fewer or more elements skips that entry.
+curved = scores.map(fn(k, v) [k, v + 5]);
+print(curved);  # {Alice: 95, Bob: 90, Charlie: 100, Diana: 93}
+
+# Transform only values (keep key unchanged)
+doubled = scores.map(fn(k, v) [k, v * 2]);
+
+# Transform keys (prefix with "user_")
+prefixed = scores.map(fn(k, v) ["user_" + k, v]);
+
+# filter - keep entries matching condition
+# Function receives (key, value) or [key, value] pair
+# Returns boolean or truthy/falsy value
+high_scores = scores.filter(fn(k, v) v >= 90);
+print(high_scores);  # {Alice: 90, Charlie: 95}
+
+# each - iterate with side effects
+# Function receives (key, value) or [key, value] pair
+# Returns original hash for chaining (return value is discarded)
+scores.each(fn(k, v) print(k + ": " + str(v)));
+```
+
+**Additional iteration methods:**
+
+- `.each_key(fn)` — iterate over keys only
+- `.each_value(fn)` — iterate over values only
+- `.keep_if(fn)` / `.delete_if(fn)` — filter variants of select/reject
+- `.all?(fn)` / `.any?(fn)` — predicate tests on all/any entries
+
+**Important: map return value**
+
+Hash `.map()` expects your function to return exactly `[key, value]` with 2 elements:
+
+```soli
+h = {"a": 1, "b": 2};
+
+# ✓ Returns [key, value] - works correctly
+h.map(fn(k, v) [k, v * 10]);  # {a: 10, b: 20}
+
+# ✗ Returns [value] only - entry is skipped (not 2 elements!)
+h.map(fn(k, v) [v * 10]);      # {} (empty!)
+
+# ✗ Returns single value - entry is skipped
+h.map(fn(k, v) v * 10);         # {} (empty!)
+```
+
+**Getting transformed values as an array**
+
+If you only need transformed values (not a new hash):
+
+```soli
+h = {"a": 1, "b": 2};
+
+# Get values first, then map to array
+doubled = h.values |> map(fn(v) v * 10);
+print(doubled);  # [10, 20]
+```
+
+**Lookup and conversion methods:**
+
+- `.shift` — remove and return first [key, value] pair (mutates); the remaining keys keep their order
+- `.delete(key)` — remove a key and return its value (null when absent); the remaining keys keep their insertion order
+- `.flatten` — convert to array of [key, value] sub-arrays
+- `.values_at(*keys)` — array of values for given keys (null for missing)
+- `.fetch_values(*keys)` — array of values (raises if any missing)
+- `.key(value)` — inverse lookup: first key for a given value
+- `.has_value?(value)` / `.value?(value)` — check if value exists
+- `.assoc(key)` — returns [key, value] pair or null
+- `.rassoc(value)` — returns [key, value] for matching value or null
+- `.to_h` — returns self (identity for hashes)
+- `.update(other)` — alias for merge
+
+#### Hash Functions
+
+```soli
+person = {"name": "Alice", "age": 30, "city": "Paris", "country": "France"};
+
+# Get length (also available as .len, .length, .size methods)
+print(len(person));    # 4
+print(person.len);     # 4
+
+# Get all keys
+keys_list = keys(person);
+print(keys_list);  # [name, age, city, country]
+
+# Get all values
+values_list = values(person);
+print(values_list);  # [Alice, 30, Paris, France]
+
+# Check if key exists
+print(has_key(person, "name"));      # true
+print(has_key(person, "email"));     # false
+
+# Get entries as [key, value] pairs
+entries_list = entries(person);
+print(entries_list);  # [[name, Alice], [age, 30], [city, Paris], [country, France]]
+
+# Merge hashes
+defaults = {"age": 0, "country": "Unknown", "active": true};
+merged = person.merge(defaults);
+print(merged);  # {name: Alice, age: 30, city: Paris, country: France, active: true}
+
+# Clear hash
+clear(person);
+print(person);  # {}
+```
+
+#### Iterating Over Hashes
+
+```soli
+prices = {"apple": 1.50, "banana": 0.75, "orange": 2.00, "grape": 3.00};
+
+# Iterate entries
+for pair in entries(prices)
+  item = pair[0];
+  price = pair[1];
+  print(item + " costs $" + str(price));
+end
+
+# Iterate keys
+for item in keys(prices)
+  print(item + ": " + str(prices[item]));
+end
+
+# Iterate values and calculate total
+total = 0;
+for price in values(prices)
+  total = total + price;
+end
+print("Total: $" + str(total));  # Total: $7.25
+
+# Filter and transform
+expensive = prices
+  .filter(fn(k, v) v > 1.00)
+  .map(fn(k, v) [k, v * 1.1]);  # 10% tax
+
+print(expensive);  # {apple: 1.65, orange: 2.2, grape: 3.3}
+```
+
+### Common Collection Patterns
+
+```soli
+# Slicing
+def slice(arr: Array, start: Int, end: Int) -> Array
+  result = [];
+  actual_end = end;
+  if end > len(arr)
+    actual_end = len(arr);
+  end
+  for i in range(start, actual_end)
+    push(result, arr[i]);
+  end
+  result
+end
+
+print(slice(fruits, 1, 3));  # ["banana", "cherry"]
+```
+
+---
+
+## Classes & OOP
+
+### Basic Class Definition
+
+```soli
+class Person
+  # Instance fields
+  name: String;
+  age: Int;
+  email: String;
+
+  # Constructor
+  new(name: String, age: Int, email: String = null)
+    this.name = name;
+    this.age = age;
+    this.email = email ?? "";
+  end
+
+  # Instance methods
+  def greet() -> String
+    "Hello, I'm " + this.name
+  end
+
+  def introduce() -> String
+    intro = "Hi, I'm " + this.name + " and I'm " + str(this.age) + " years old";
+    if this.email != ""
+      intro = intro + ". You can reach me at " + this.email;
+    end
+    intro
+  end
+
+  def have_birthday()
+    this.age = this.age + 1;
+  end
+end
+
+# Creating instances
+alice = Person.new("Alice", 30);
+bob = Person.new("Bob", 25, "bob@example.com");
+
+# Using instances
+print(alice.greet());      # "Hello, I'm Alice"
+print(bob.introduce());    # "Hi, I'm Bob and I'm 25 years old. You can reach me at bob@example.com"
+
+alice.have_birthday();
+print(alice.age);          # 31
+```
+
+#### Creating instances
+
+`Klass.new(...)` builds an instance and runs the constructor with the
+arguments — positional, named, a hash, or none. `new Klass(...)` is the same
+call, and still works everywhere.
+
+```soli
+alice = Person.new("Alice", 30)
+bob = Person.new(name: "Bob", age: 25)
+
+class Counter
+  count: Int
+
+  new
+    @count = 0
+  end
+end
+
+Counter.new().count   # 0 — the constructor ran
+```
+
+- Keep the parentheses when there are no arguments: a bare `Counter.new` is
+  not a call.
+- A class without a constructor takes its fields from a hash or from named
+  arguments: `Bag.new({"a": 1})`, `Bag.new(a: 1)`. The fields it is not given
+  keep their defaults.
+- A module is not instantiated: `Greetable.new()` raises.
+- `return` ends a constructor early (a guard such as `return if amount.nil?`).
+  `new` still gives the instance, never what the constructor returns.
+
+#### Fields start with their defaults
+
+Before any constructor runs, every field the class and its parents declare is
+set: to its default, or to `nil` when it has none. The parent's fields come
+first, so a subclass's default wins. Every way of building the instance sees
+them: `new Klass(...)`, `Klass(...)`, `Klass.new(...)`, and a hash or named
+arguments on a class without a constructor.
+
+```soli
+class Account
+  owner: String
+  nickname: String
+  balance: Int = 0
+  tags: Array = []
+  opened: Float = clock()     # evaluated for each new account
+
+  new(owner)
+    @owner = owner
+  end
+end
+
+a = Account.new("ann")
+a.balance                    # 0
+a.nickname                   # nil — declared, never assigned
+a.tags.push("vip")
+Account.new("bo").tags       # [] — each instance gets its own array
+
+class Savings < Account
+  balance: Int = 100
+end
+
+Savings.new("cy").balance    # 100 — the subclass's default wins
+```
+
+- A default is evaluated once per new instance, never when the class is
+  defined.
+- A default that is not a literal (`clock()`, `@items.length`, a constant)
+  is evaluated on the new instance: `@field` and `@method` are the new
+  instance's, and a name reads what the class's methods would read — never a
+  local or the `this` of the code that calls `new`.
+- Each class sets its fields first — its literal defaults, `nil` for the
+  rest — then evaluates its other defaults in declaration order, before the
+  next class down sets its own. So a default may read a field declared above
+  it, or any field with a literal default of its class or its parents.
+- `super(...)` runs the parent's constructor body only. It does not set the
+  fields again, so what a constructor assigned before calling it stays.
+- A model's `Post.new(attrs)` is the ORM's: it sets the literal defaults and
+  the attributes, and leaves any other field unset (see
+  [Models](models.md#building-without-saving)).
+
+```soli
+class Basket
+  items: Array = [1, 2, 3]
+  count: Int = @items.length      # 3 — this basket's items
+  label: String = "n=#{@count}"   # "n=3": `count` is declared above
+end
+```
+
+#### `this` and `self`
+
+`self` is an alias for `this` — they refer to the same instance and are interchangeable everywhere (instance methods, constructors, `instance_eval` blocks). Pick whichever reads better; Ruby refugees can keep typing `self`.
+
+```soli
+class User
+  new(name)
+    self.name = name        # same as this.name = name
+  end
+
+  def say_hello
+    println("Hello, " + self.name)
+  end
+end
+```
+
+### The `@` Sigil — Shorthand for `this.`
+
+Inside any instance method, `@name` is sugar for `this.name`. Ruby developers will feel at home, and it drops the noise in constructor/field-heavy code.
+
+```soli
+class Counter
+  n: Int;
+
+  new()
+    @n = 0;            # same as this.n = 0
+  end
+
+  def bump()
+    @n += 1;           # read + write via sugar
+  end
+
+  def double_it()
+    @n = @n * 2;
+  end
+
+  def value() -> Int
+    @n                 # bare read, same as this.n
+  end
+end
+```
+
+**What works:**
+
+- Reads: `@foo`
+- Writes: `@foo = x`
+- Compound assignment: `@foo += 1`, `@foo *= 2`, etc.
+- Method calls: `@greet()` (calls `this.greet()`)
+- Chained access: `@inner.label`, `@items[0]`
+- Postfix ops: `@foo++`, `@foo--`
+- Inheritance: `@foo` resolves to fields set by a parent class's constructor
+
+**What doesn't:**
+
+- `@@foo` (Ruby-style class variables) — rejected at parse time. Use a `static` field instead.
+- `@foo` outside a class method — fails the same way a literal `this.foo` would, because `this` isn't in scope.
+
+### Controllers: Instance Fields Auto-Exposed to Views
+
+In MVC controllers, fields set on the controller (via `@foo = ...` or `this.foo = ...`) inside an action are automatically exposed as view locals in the template that action renders — no data hash needed.
+
+```soli
+class PostsController < Controller
+  def show
+    @post = Post.find(params["id"]);
+    @related = Post.where({"category_id": @post.category_id}).limit(5);
+    render("posts/show")    # no data hash — view sees `post` and `related`
+  end
+end
+```
+
+```erb
+<%# app/views/posts/show.html.erb %>
+<h1><%= post.title %></h1>
+<%= post.body %>
+
+<h2>Related</h2>
+<% for p in related %>
+  <%= link_to(p.title, "/posts/" + str(p.id)) %>
+<% end %>
+```
+
+- Explicit `render("view", {...})` data **always wins** over the auto-exposed fields.
+- The framework-injected fields `req`, `params`, `session`, and `headers` are never re-exposed this way — those flow through their usual channels.
+- Auto-exposure is scoped to the action currently running. No cross-action, cross-controller, or cross-request leakage.
+- Partials and components (`render_partial`, `partial`, `component`) see the fields too, after the locals passed to them, which win. Inside the partial, read the data back via bare identifiers or the `locals` hash (`locals["class"]`) for keys whose names collide with reserved words or builtins. See [Views → Inherited instance variables](./views.md#inherited-instance-variables) and [Views → The `locals` hash](./views.md#the-locals-hash) for the full semantics.
+
+### Constructors and Factory Methods
+
+```soli
+class Rectangle
+  width: Float;
+  height: Float;
+
+  new(width: Float, height: Float)
+    this.width = width;
+    this.height = height;
+  end
+
+  def area() -> Float
+    this.width * this.height
+  end
+
+  def perimeter() -> Float
+    2 * (this.width + this.height)
+  end
+
+  # Static factory method
+  static def square(side: Float) -> Rectangle
+    Rectangle.new(side, side)
+  end
+
+  # Another factory method
+  static def from_area(area: Float, aspect_ratio: Float = 1.0) -> Rectangle
+    width = sqrt(area / aspect_ratio);
+    height = width * aspect_ratio;
+    Rectangle.new(width, height)
+  end
+end
+
+rect = Rectangle.new(10.0, 5.0);
+print(rect.area());  # 50.0
+
+square = Rectangle.square(7.0);
+print(square.area());  # 49.0
+
+from_area = Rectangle.from_area(24.0, 2.0);  # 2:1 aspect ratio
+print(from_area.width);   # ~3.464
+print(from_area.height);  # ~6.928
+```
+
+Inside a static method, `this` is the class it was called on — a subclass
+when called on one — so a factory written once builds the right class:
+
+```soli
+class Shape
+  static def build
+    this.new()
+  end
+end
+
+class Circle < Shape
+end
+
+Circle.build.class   # "Circle"
+```
+
+### Mixin modules
+
+`module Name … end` defines a mixin (and a namespace). Instance methods can be mixed into a class with `include` (they become instance methods) or `extend` (they become class methods). Methods on a module are also callable on the module itself (`Greetable.greet` works without an include — like Ruby `extend self`).
+
+```soli
+module Greetable
+  def greet
+    "hello, #{self.name}"
+  end
+end
+
+class User
+  include Greetable
+  new(name)
+    @name = name
+  end
+end
+
+User.new("Ada").greet   # "hello, Ada"
+
+class Factory
+  extend Greetable
+end
+# Factory.greet — `self` is the class
+
+module Admin
+  class User
+    def role
+      "admin"
+    end
+  end
+end
+Admin::User.new().role  # "admin"
+```
+
+- `include` / `extend` accept one or more names: `include A, B`.
+- A class's own methods win over included ones.
+- `ModuleName.new()` (like `new ModuleName()`) raises — modules are not instantiated.
+- This is separate from file `import` / `export` (see [Modules](#modules) below).
+
+### Concern hooks
+
+Rails-style hooks so a module can configure the host class (the `ActiveSupport::Concern` shape):
+
+```soli
+module Publishable
+  included do
+    # Replayed as class-body DSL on the host (`validates`, `has_many`, …).
+    validates("published_at", { "presence": true })
+  end
+
+  class_methods do
+    def published
+      this.where("published_at != null")
+    end
+  end
+
+  def publish
+    self.published_at = DateTime.utc()
+  end
+end
+
+class Post < Model
+  include Publishable
+end
+```
+
+- `included do … end` — run against the including class (same dispatch as a Model class body, so `validates` / `has_many` / `scope` work).
+- `extended do … end` — same, when the module is `extend`ed.
+- `class_methods do … end` — those methods become class methods on the includer.
+- `def self.included(base)` / `def self.extended(base)` — called with the host class after the mix-in.
+
+Not in this cut: `prepend`, ancestor-chain `super` into the module, or `include` of a class.
+
+### Inheritance
+
+> **Note:** You can use `<` as an alias for `extends` (e.g., `class Dog < Animal`).
+
+```soli
+# Base class
+class Animal
+  name: String;
+  age: Int;
+
+  new(name: String, age: Int)
+    this.name = name;
+    this.age = age;
+  end
+
+  def speak() -> String
+    this.name + " makes a sound"
+  end
+
+  def get_info() -> String
+    this.name + " is " + str(this.age) + " years old"
+  end
+end
+
+# Subclass
+class Dog < Animal
+  breed: String;
+
+  new(name: String, age: Int, breed: String)
+    # Call parent constructor
+    super(name, age);
+    this.breed = breed;
+  end
+
+  # Override method
+  def speak() -> String
+    this.name + " barks!"
+  end
+
+  # Subclass-specific method
+  def fetch() -> String
+    this.name + " fetches the ball!"
+  end
+end
+
+# Another subclass
+class Cat < Animal
+  new(name: String, age: Int)
+    super(name, age);
+  end
+
+  def speak() -> String
+    this.name + " meows!"
+  end
+
+  def purr() -> String
+    this.name + " purrs contentedly"
+  end
+end
+
+# Using inheritance
+dog = Dog.new("Buddy", 3, "Golden Retriever");
+print(dog.speak());        # "Buddy barks!"
+print(dog.get_info());     # "Buddy is 3 years old"
+print(dog.fetch());        # "Buddy fetches the ball!"
+print(dog.breed);          # "Golden Retriever"
+
+cat = Cat.new("Whiskers", 5);
+print(cat.speak());        # "Whiskers meows!"
+print(cat.purr());         # "Whiskers purrs contentedly"
+
+# Polymorphism
+animals = [
+  Dog.new("Rex", 2, "German Shepherd"),
+  Cat.new("Mittens", 4),
+  Dog.new("Spot", 1, "Beagle")
+];
+
+for animal in animals
+  print(animal.speak());  # Each calls the appropriate speak() method
+end
+```
+
+### Multi-level Inheritance
+
+Classes can extend other user-defined classes, forming deep inheritance chains. Methods, fields, and constructors are inherited through the full chain. Use `super` to call the parent's version at each level.
+
+```soli
+class Controller
+  def action() -> String
+    "base"
+  end
+end
+
+class BaseController < Controller
+  def before() -> String
+    "authenticated"
+  end
+end
+
+class HomeController < BaseController
+  def action() -> String
+    super.action() + " -> home"
+  end
+end
+
+c = HomeController.new()
+print(c.action())   # "base -> home"
+print(c.before())   # "authenticated" (inherited from BaseController)
+```
+
+### Interfaces
+
+```soli
+# Define an interface
+interface Drawable {
+  def draw() -> String;
+  def get_color() -> String;
+}
+
+# Another interface
+interface Resizable {
+  def resize(width: Float, height: Float);
+  def get_dimensions() -> {width: Float, height: Float};
+}
+
+# Class implementing multiple interfaces
+class Circle implements Drawable, Resizable {
+  radius: Float;
+  color: String;
+
+  new(radius: Float, color: String) {
+    this.radius = radius;
+    this.color = color;
+  }
+
+  def draw() -> String {
+    "Circle with radius " + str(this.radius) + " and color " + this.color
+  }
+
+  def get_color() -> String {
+    this.color
+  }
+
+  def resize(width: Float, height: Float) {
+    this.radius = width / 2;
+  }
+
+  def get_dimensions() -> {width: Float, height: Float} {
+    {"width": this.radius * 2, "height": this.radius * 2}
+  }
+}
+
+class Rectangle implements Drawable, Resizable {
+  width: Float;
+  height: Float;
+  color: String;
+
+  new(width: Float, height: Float, color: String) {
+    this.width = width;
+    this.height = height;
+    this.color = color;
+  }
+
+  def draw() -> String {
+    "Rectangle " + str(this.width) + "x" + str(this.height) + " in " + this.color
+  }
+
+  def get_color() -> String {
+    this.color
+  }
+
+  def resize(width: Float, height: Float) {
+    this.width = width;
+    this.height = height;
+  }
+
+  def get_dimensions() -> {width: Float, height: Float} {
+    {"width": this.width, "height": this.height}
+  }
+}
+
+# Using interfaces
+shapes = [
+  Circle.new(5.0, "red"),
+  Rectangle.new(10.0, 6.0, "blue")
+];
+
+for shape in shapes {
+  print(shape.draw());
+}
+```
+
+#### `~` shorthand for `implements`
+
+`~` is an alias for `implements` in class headers, in the same spirit as `<` aliases `extends`. It composes with both forms — use whichever reads best:
+
+```soli
+# Shorthand on its own
+class Circle ~ Drawable, Resizable
+  # ...
+end
+
+# `extends` + `~`
+class Dog < Animal ~ Greetable
+  def greet() "woof" end
+end
+
+# `<` + `~`
+class Cat < Animal ~ Greetable
+  def greet() "meow" end
+end
+```
+
+The full `implements` keyword still works; pick whichever matches the style of the surrounding code.
+
+### Private Methods
+
+A private method can only be called on `self`: as `@name`, `this.name`, or just
+`name` inside the class. Called on any other receiver — from outside, or on
+another instance of the same class — it raises:
+
+```
+private method 'validate_amount' called for an instance of BankAccount
+```
+
+Mark one method with `private def`, or start a section with `private` alone on
+its line: every method below it is private, until a `public` (or `protected`)
+line.
+
+```soli
+class BankAccount
+  balance: Float
+
+  new(initial: Float)
+    @balance = initial
+  end
+
+  def deposit(amount: Float) -> Bool
+    return false unless valid_amount?(amount)
+
+    @balance += amount
+    record("deposit", amount)
+    true
+  end
+
+  def balance_label -> String
+    "#{currency} #{@balance}"
+  end
+
+  private
+
+  def valid_amount?(amount: Float) -> Bool
+    amount > 0
+  end
+
+  def record(kind: String, amount: Float)
+    print("#{kind}: #{amount}")
+  end
+
+  def currency
+    "EUR"
+  end
+end
+
+account = BankAccount.new(100.0)
+account.deposit(50.0)            # true
+account.balance_label            # "EUR 150"
+account.valid_amount?(1.0)       # raises: private method 'valid_amount?' …
+```
+
+- **Bare method calls.** Inside an instance method, a name that is no local
+  variable and no function in scope calls the method of that name on `self`:
+  `valid_amount?(amount)` is `@valid_amount?(amount)`, and `currency` (no
+  arguments) is `@currency`. Locals and functions keep priority, so a local
+  `currency = "USD"` wins over the method. This works for public and private
+  methods written in Soli, inherited ones included; a built-in method such as a
+  model's `save` still needs `@save`.
+- **Subclasses** call inherited private methods on `self` the same way. A
+  subclass that redefines the method without `private` makes it public again.
+- **Controllers.** A private or protected method is not an action: a route that
+  names one answers 404. `_`-prefixed methods stay out of the automatic routes
+  too.
+- **A `_` prefix is only a naming convention.** It keeps a controller method out
+  of the automatic routes; it does not make the method private. Use `private`
+  for that.
+- **`soli fmt`** writes visibility as sections: a `private def` becomes a
+  `private` line above the method (and a `public` line above the next public
+  one).
+- **Fields follow the same rules.** A `private` field is readable and writable
+  on `self` only (`@secret`, `this.secret`); a `protected` one also from code
+  running in an instance of the declaring class or a subclass. Anything else
+  raises `private field 'secret' accessed for an instance of Vault` — reads and
+  writes alike. Fields under a `private` section are private.
+- **`soli check`** reports these calls and accesses when it knows the
+  receiver's class: an annotated variable (`v: Vault`), or a variable
+  assigned `Vault.new(...)` (or `new Vault(...)`). A receiver it cannot type (an unannotated
+  parameter, say) is left to the runtime.
+
+### Protected Methods
+
+A protected method is reachable from code running in an instance of the class
+that declares it, or of a subclass — on `self`, or on another instance. From
+anywhere else it raises `protected method 'x' called for an instance of C`. It
+suits a method two instances compare each other by:
+
+```soli
+class Account
+  cents: Int
+
+  new(cents: Int)
+    @cents = cents
+  end
+
+  def richer_than?(other) -> Bool
+    balance > other.balance      # another instance: allowed, we are an Account
+  end
+
+  protected
+
+  def balance
+    @cents
+  end
+end
+
+Account.new(10).richer_than?(Account.new(5))   # true
+Account.new(10).balance                        # raises: protected method 'balance' …
+```
+
+`protected def x` marks one method; `protected` alone on its line starts a
+section, like `private`.
+
+### Static Members
+
+```soli
+class MathUtils
+  # Static constants
+  static PI: Float = 3.14159265359;
+  static E: Float = 2.71828182846;
+  static GOLDEN_RATIO: Float = 1.61803398875;
+
+  # Static field
+  static calculation_count: Int = 0;
+
+  # Static methods
+  static def square(x: Float) -> Float
+    MathUtils.calculation_count = MathUtils.calculation_count + 1;
+    x * x
+  end
+
+  static def cube(x: Float) -> Float
+    MathUtils.calculation_count = MathUtils.calculation_count + 1;
+    x * x * x
+  end
+
+  static def max(a: Float, b: Float) -> Float
+    a > b ? a : b
+  end
+
+  static def min(a: Float, b: Float) -> Float
+    a < b ? a : b
+  end
+
+  static def clamp(value: Float, min_val: Float, max_val: Float) -> Float
+    if value < min_val
+      return min_val;
+    end
+    if value > max_val
+      return max_val;
+    end
+    value
+  end
+end
+
+# Using static members
+print(MathUtils.PI);           # 3.14159265359
+print(MathUtils.square(4.0));  # 16.0
+print(MathUtils.cube(3.0));    # 27.0
+
+result = MathUtils.clamp(150, 0, 100);
+print(result);  # 100
+
+print(MathUtils.calculation_count);  # 3
+```
+
+#### Ruby-style `def self.method_name`
+
+As an alternative to the `static` modifier, prefix the method name with `self.` — the `self.` prefix marks the method as static. This reads naturally for users coming from Ruby and skips the surrounding `class << self ... end` block when you only have a method or two.
+
+```soli
+class MathUtils
+  def self.square(x: Float) -> Float
+    x * x
+  end
+
+  def self.cube(x: Float) -> Float
+    x * x * x
+  end
+end
+
+print(MathUtils.square(4.0));  # 16.0
+print(MathUtils.cube(3.0));    # 27.0
+```
+
+`fn self.foo` works the same way (`def` and `fn` are interchangeable). Combining both — `static def self.foo` — is allowed and stays static.
+
+#### Grouping static methods with `class << self`
+
+When a class has several class methods, repeating the `static` modifier on each one is noisy. Soli supports the Ruby-style singleton-class form: declare a `class << self ... end` block inside the class body and every method inside is treated as static. `def` and `fn` are interchangeable.
+
+```soli
+class MathUtils
+  class << self
+    def square(x: Float) -> Float
+      x * x
+    end
+
+    def cube(x: Float) -> Float
+      x * x * x
+    end
+
+    def max(a: Float, b: Float) -> Float
+      a > b ? a : b
+    end
+  end
+end
+
+print(MathUtils.square(4.0));  # 16.0
+print(MathUtils.cube(3.0));    # 27.0
+print(MathUtils.max(2.0, 7.0)); # 7.0
+```
+
+The block can sit anywhere in the class body and coexists with regular instance methods, top-level `static fn` declarations, and `static` fields. Only method declarations are allowed inside the block — fields and constants stay at the class top level (`static foo: Type = ...`). For just a single class method, the lighter `def self.foo` form (above) is usually clearer than wrapping a one-method block.
+
+### Complete Class Example: A Product Inventory System
+
+```soli
+# Base product class
+class Product
+  id: String;
+  name: String;
+  price: Float;
+  quantity: Int;
+
+  new(id: String, name: String, price: Float, quantity: Int)
+    this.id = id;
+    this.name = name;
+    this.price = price;
+    this.quantity = quantity;
+  end
+
+  def get_total_value() -> Float
+    this.price * this.quantity
+  end
+
+  def is_in_stock() -> Bool
+    this.quantity > 0
+  end
+
+  def reduce_quantity(amount: Int) -> Bool
+    if this.quantity >= amount
+      this.quantity = this.quantity - amount;
+      return true;
+    end
+    false
+  }
+
+  def to_string() -> String {
+    this.name + " ($" + str(this.price) + ") - " + str(this.quantity) + " in stock"
+  }
+}
+
+# Electronics subclass with additional warranty info
+class Electronics < Product
+  warranty_months: Int;
+  brand: String;
+
+  new(id: String, name: String, price: Float, quantity: Int, brand: String, warranty_months: Int)
+    super(id, name, price, quantity);
+    this.brand = brand;
+    this.warranty_months = warranty_months;
+  end
+
+  def is_under_warranty() -> Bool
+    this.warranty_months > 12
+  end
+
+  def to_string() -> String
+    this.brand + " " + this.name + " - $" + str(this.price) + " (" + str(this.warranty_months) + " month warranty)"
+  end
+end
+
+# Inventory class to manage products
+class Inventory
+  products: Product[];
+
+  new()
+    this.products = [];
+  end
+
+  def add_product(product: Product)
+    push(this.products, product);
+  end
+
+  def remove_product(product_id: String) -> Product?
+    for product, i in this.products
+      if product.id == product_id
+        return splice(this.products, i, 1)[0];
+      end
+    end
+    null
+  end
+
+  def find_product(id: String) -> Product?
+    for product in this.products
+      if product.id == id
+        return product;
+      end
+    end
+    null
+  end
+
+  def get_total_inventory_value() -> Float
+    total = 0.0;
+    for product in this.products
+      total = total + product.get_total_value();
+    end
+    total
+  end
+
+  def get_out_of_stock_products() -> Product[]
+    this.products.filter(fn(p) !p.is_in_stock())
+  end
+
+  def list_all()
+    for product in this.products
+      print(product.to_string);
+    end
+  end
+end
+
+# Using the inventory system
+inventory = Inventory.new();
+
+# Add products
+inventory.add_product(Product.new("P001", "Laptop", 999.99, 10));
+inventory.add_product(Electronics.new("E001", "Headphones", 149.99, 50, "AudioTech", 24));
+inventory.add_product(Product.new("P002", "Mouse", 29.99, 100));
+
+# Work with inventory
+print("Total inventory value: $" + str(inventory.get_total_inventory_value()));
+
+laptop = inventory.find_product("P001");
+if laptop != null
+  print("Found: " + laptop.to_string);
+end
+
+inventory.list_all();
+```
+
+### Comparing Classes
+
+Two class values compare with `==` by name. `record.class` answers the class
+*name* (a String), which compares equal to the class itself as well as to the
+string.
+
+```soli
+klass = Account
+klass == Account           # true
+klass == Contact           # false
+
+account = Account.find(id)
+account.class == Account   # true
+account.class == "Account" # true
+```
+
+### Nested Classes
+
+Soli supports nested classes - classes defined within other classes. This feature is useful for organizing related classes, implementing design patterns, and creating clean namespaces.
+
+```soli
+class Organization
+  class Department
+    def get_name()
+      "Engineering"
+    end
+
+    def get_budget()
+      1000000
+    end
+  end
+
+  class Team
+    def get_name()
+      "Backend Team"
+    end
+  end
+end
+```
+
+#### Accessing Nested Classes
+
+Reach a nested class through its outer class, with `::` or a dot
+(`Organization::Department`, `Organization.Department`). It is named after
+its outer class: `type(dept)` is `"Organization::Department"`.
+
+Use the `::` (scope resolution operator) to access nested classes:
+
+```soli
+dept = Organization::Department.new();
+print("Department: " + dept.get_name());  # "Department: Engineering"
+print("Budget: $" + str(dept.get_budget()));  # "Budget: $1000000"
+
+team = Organization::Team.new();
+print("Team: " + team.get_name());  # "Team: Backend Team"
+```
+
+#### Use Cases
+
+**1. Design Patterns**
+
+Nested classes are perfect for implementing design patterns:
+
+```soli
+# State Pattern
+class TrafficLight
+  class RedState
+    def next()
+      "green"
+    end
+
+    def get_duration()
+      30
+    end
+  end
+
+  class GreenState
+    def next()
+      "yellow"
+    end
+
+    def get_duration()
+      20
+    end
+  end
+
+  class YellowState
+    def next()
+      "red"
+    end
+
+    def get_duration()
+      5
+    end
+  end
+end
+
+red = TrafficLight::RedState.new();
+print("Red light duration: " + str(red.get_duration()) + "s");  # "Red light duration: 30s"
+print("Next state: " + red.next);  # "Next state: green"
+```
+
+**2. Organization and Encapsulation**
+
+Group related classes together:
+
+```soli
+class Database
+  class Connection
+    def connect()
+      "Connected to database"
+    end
+  end
+
+  class QueryBuilder
+    def select(table: String)
+      "SELECT * FROM " + table
+    end
+  end
+
+  class Transaction
+    def begin()
+      "Transaction started"
+    end
+  end
+end
+
+conn = Database::Connection.new();
+query = Database::QueryBuilder.new();
+tx = Database::Transaction.new();
+
+print(conn.connect());  # "Connected to database"
+print(query.select("users"));  # "SELECT * FROM users"
+print(tx.begin());  # "Transaction started"
+```
+
+**3. Configuration Objects**
+
+Create hierarchical configuration structures:
+
+```soli
+class Server
+  class SSLConfig
+    def is_enabled()
+      true
+    end
+
+    def get_protocol()
+      "TLS 1.3"
+    end
+  end
+
+  class LoggingConfig
+    def get_level()
+      "INFO"
+    end
+  end
+
+  def start()
+    "Server starting with SSL: " + str(Server::SSLConfig.new().is_enabled())
+  end
+end
+
+ssl = Server::SSLConfig.new();
+print("Protocol: " + ssl.get_protocol());  # "Protocol: TLS 1.3"
+```
+
+#### Multiple Nested Classes
+
+You can define multiple nested classes at the same level:
+
+```soli
+class Service
+  class Database
+    def connect()
+      "DB connected"
+    end
+  end
+
+  class Cache
+    def get(key: String)
+      "cached:" + key
+    end
+  end
+
+  class Logger
+    def log(msg: String)
+      "[LOG] " + msg
+    end
+  end
+end
+
+db = Service::Database.new();
+cache = Service::Cache.new();
+logger = Service::Logger.new();
+
+print(db.connect());  # "DB connected"
+print(cache.get("test"));  # "cached:test"
+print(logger.log("test message"));  # "[LOG] test message"
+```
+
+---
+
+## Pattern Matching
+
+### Basic Pattern Matching
+
+```soli
+# Simple value matching
+x = 42;
+result = match x {
+  42 => "the answer to everything",
+  0 => "zero",
+  _ => "something else",
+};
+print(result);  # "the answer to everything"
+
+# String matching
+status = "active";
+status_message = match status {
+  "active" => "User is active and can access the system",
+  "pending" => "Awaiting approval from administrator",
+  "suspended" => "Account is temporarily disabled",
+  "banned" => "Access permanently denied",
+  _ => "Unknown status",
+};
+print(status_message);  # "User is active and can access the system"
+```
+
+### Guard Clauses
+
+```soli
+# Guard clauses with conditions
+n = 5;
+category = match n {
+  n if n < 0 => "negative",
+  0 => "zero",
+  n if n > 0 && n < 10 => "single digit positive",
+  n if n >= 10 && n < 100 => "two digit positive",
+  _ => "large number",
+};
+print(category);  # "single digit positive"
+
+# Practical example: HTTP status handling
+def handle_status(code: Int) -> String {
+  match code {
+    code if code >= 200 && code < 300 => "Success: " + str(code),
+    code if code >= 300 && code < 400 => "Redirect: " + str(code),
+    404 => "Not Found",
+    403 => "Forbidden",
+    500 => "Internal Server Error",
+    code if code >= 500 => "Server Error: " + str(code),
+    _ => "Client Error: " + str(code),
+  }
+}
+
+print(handle_status(200));  # "Success: 200"
+print(handle_status(404));  # "Not Found"
+print(handle_status(503));  # "Server Error: 503"
+```
+
+### Array Patterns
+
+```soli
+numbers = [1, 2, 3];
+
+# Match array length
+description = match numbers {
+  [] => "empty array",
+  [_] => "single element array",
+  [_, _] => "two element array",
+  [_, _, _] => "three element array",
+  _ => "array with more than 3 elements",
+};
+
+# Destructuring arrays
+result = match numbers {
+  [first] => "First element is: " + str(first),
+  [first, second] => "First: " + str(first) + ", Second: " + str(second),
+  [first, second, third] => "Three elements: " + str(first) + ", " + str(second) + ", " + str(third),
+  [first, ...rest] => "First: " + str(first) + ", Rest has " + str(len(rest)) + " elements",
+};
+
+# Rest pattern
+arr = [1, 2, 3, 4, 5]
+summary = match arr {
+  [first, second, ...rest] => "First two: #{first}, #{second}; remaining: #{rest}",
+  _ => "too short"
+}
+# "First two: 1, 2; remaining: [3, 4, 5]"
+```
+
+An arm is a single expression: `=> { … }` is read as a hash literal, so
+several statements belong in a method the arm calls. In a type-checked script
+(`soli file.sl`) an arm that uses the `...rest` binding is currently refused
+with *Undefined variable 'rest'*; it runs in a served app, in `soli test`,
+and with `--no-type-check`.
+
+### Hash Patterns
+
+```soli
+user = {"name": "Alice", "age": 30, "city": "Paris"};
+
+# Match hash structure
+match user {
+  {} => "empty object",
+  {name: n} => "name is: " + n,
+  {name: n, age: a} => n + " is " + str(a) + " years old",
+  {name: n, age: a, city: c} => n + " is " + str(a) + " years old and lives in " + c,
+  _ => "unknown structure",
+};
+
+# Nested hash matching
+data = {
+  "user": {"name": "Alice", "email": "alice@example.com"},
+  "posts": [{"title": "Post 1"}, {"title": "Post 2"}]
+};
+
+match data {
+  {user: {name: n}, posts: posts} => "#{n} wrote #{posts.length} posts",
+  _ => "no match"
+}
+```
+
+### Type-Based Matching
+
+A type pattern puts the type first and the binding after it: `Int: n`.
+It exists for the four primitive types — `Int`, `Float`, `Bool` and
+`String`. The name-first form (`n: Int`) does not parse, because those type
+names are keywords. For a class, the name-first `p: Point` is a class test
+that **binds nothing** — `p` is undefined in the arm; read the value through
+the scrutinee, or bind it with a guard (`p if type(p) == "Point"`). Arrays and
+hashes have no type pattern (`Array: a` is a type error): bind the value and
+test it in a guard with `type()`.
+
+```soli
+class Point
+  x: Int
+
+  new(x)
+    @x = x
+  end
+end
+
+def describe_value(val) -> String
+  match val {
+    String: s => "String with #{s.length} characters",
+    Int: n => "Integer: #{n}",
+    Float: f => "Float: #{f}",
+    Bool: b => "Boolean: #{b}",
+    arr if type(arr) == "array" => "Array with #{arr.length} elements",
+    h if type(h) == "hash" => "Hash with #{h.length} keys",
+    p if type(p) == "Point" => "Point at #{p.x}",
+    nil => "nil",
+    _ => "Unknown type: #{type(val)}"
+  }
+end
+
+describe_value("hello")     # "String with 5 characters"
+describe_value(42)          # "Integer: 42"
+describe_value([1, 2, 3])   # "Array with 3 elements"
+describe_value(Point.new(3)) # "Point at 3"
+
+# A type pattern takes a guard too
+size = match 5 { Int: n if n > 3 => "big #{n}", _ => "small" }   # "big 5"
+
+# Practical example: JSON value handler
+def handle_json_value(value) -> String
+  match value {
+    nil => "null",
+    String: s => "\"" + s + "\"",
+    Int: n => n.to_s,
+    Float: n => n.to_s,
+    Bool: b => b.to_s,
+    arr if type(arr) == "array" => "[" + arr.map { |x| handle_json_value(x) }.join(", ") + "]",
+    h if type(h) == "hash" => "{" + h.entries.map { |pair| "\"" + pair[0] + "\": " + handle_json_value(pair[1]) }.join(", ") + "}",
+    _ => "\"unknown\""
+  }
+end
+
+handle_json_value({"a": [1, 2.5, "x", nil, true]})   # {"a": [1, 2.5, "x", null, true]}
+```
+
+### Advanced Pattern Matching Examples
+
+```soli
+# Command pattern matching
+def execute_command(command: Hash) -> String {
+  match command {
+    {"action": "create", "type": "user", "data": data} => {
+      "Creating user: " + data["name"];
+    },
+    {"action": "update", "type": "user", "id": id, "data": data} => {
+      "Updating user " + str(id) + ": " + data["name"];
+    },
+    {"action": "delete", "type": "user", "id": id} => {
+      "Deleting user " + str(id);
+    },
+    {"action": action} => {
+      "Unknown action: " + action;
+    },
+    _ => "Invalid command format",
+  }
+}
+
+# Tree traversal with pattern matching
+def process_tree(node: Any) {
+  match node {
+    {"type": "leaf", "value": value} => {
+      {"value": value * 2};
+    },
+    {"type": "node", "left": left, "right": right} => {
+      {
+        "type": "node",
+        "left": process_tree(left),
+        "right": process_tree(right),
+      };
+    },
+    {"type": "leaf"} => {"value": 0},
+    _ => null,
+  }
+}
+```
+
+---
+
+## Enums
+
+An enum is a type-safe set of named **variants**. Some variants are plain
+("unit"); others carry a **payload** of named fields. Reach for an enum instead
+of a stringly-typed state like `status = "pending"` — you get autocompletion,
+typo protection, and exhaustiveness-checked `match`.
+
+### Declaring an enum
+
+```soli
+enum Status
+  Active,
+  Archived,
+  Pending(reason: String)   # payload field type is optional (used by `soli check`)
+end
+```
+
+Both brace and `end` forms parse; `soli fmt` normalizes to the `end` form.
+Variant names are `PascalCase`, like classes, and trailing commas are optional.
+
+### Constructing values
+
+```soli
+a = Status.Active                    # a unit variant
+
+p = Status.Pending(reason: "kyc")    # named argument
+p = Status.Pending("kyc")            # positional — same value
+
+p.variant()                          # "Pending" — the variant tag as a String
+```
+
+### Matching variants
+
+Match a variant with `EnumName.Variant`. A payload variant binds its fields
+positionally, in declaration order:
+
+```soli
+label = match status
+  Status.Active     => "Live",
+  Status.Archived   => "Archived",
+  Status.Pending(r) => "Waiting: " + r,   # binds `reason` to `r`
+end
+
+enum Shape
+  Circle(radius: Float),
+  Rect(w: Float, h: Float)
+end
+
+area = match shape
+  Shape.Circle(radius) => 3.14159 * radius * radius,
+  Shape.Rect(w, h)     => w * h,
+end
+```
+
+### Methods on enums
+
+An enum can carry behaviour. Inside a method, `self` is the value and
+`match self` dispatches on its variant:
+
+```soli
+enum Status
+  Active,
+  Archived,
+  Pending(reason: String)
+
+  def label -> String
+    match self
+      Status.Active     => "Live",
+      Status.Pending(r) => "Waiting: " + r,
+      _                 => "Archived",
+    end
+  end
+end
+
+Status.Pending(reason: "kyc").label()   # "Waiting: kyc"
+```
+
+### Equality and introspection
+
+Enum values compare **structurally** — same variant, equal payloads:
+
+```soli
+Status.Active == Status.Active                                # true
+Status.Active == Status.Archived                              # false
+Status.Pending(reason: "x") == Status.Pending(reason: "x")    # true  (structural)
+Status.Pending(reason: "x") == Status.Pending(reason: "y")    # false
+```
+
+`!=` is always the negation of `==`, in a condition too
+(`if order.status != Status.Paid`). A value rebuilt from storage, such as an
+`enum_field` read or `Status.parse(...)`, compares like one built in code.
+
+`variant()` returns the variant name as a String — useful for serializing to a
+database column or JSON.
+
+### Exhaustiveness checking
+
+When a value's type is a known enum, `soli check` warns if a `match` misses a
+variant and has no `_` catch-all. It's a **non-blocking** warning — the code
+still runs:
+
+```soli
+def describe(s: Status) -> String
+  match s
+    Status.Active     => "live",
+    Status.Pending(r) => "waiting: " + r,
+  end                  # missing `Archived`, no `_`
+end
+```
+
+```
+$ soli check app/
+warning: match on enum 'Status' is not exhaustive — missing: Archived (add them, or a `_ =>` arm)
+```
+
+### Persisting enums in models
+
+Declare `enum_field :name, EnumType` on a model and the column round-trips
+automatically: a unit variant is stored as its tag string, a payload variant as
+a tagged object, and reads rebuild the enum value. A file under `app/models/`
+that declares an enum loads before the models, so the model finds it.
+
+```soli
+# app/models/order.sl
+enum Status
+  Pending(reason: String),
+  Paid,
+  Shipped,
+  Cancelled(reason: String)
+end
+
+class Order < Model
+  enum_field :status, Status
+
+  def can_ship -> Bool
+    match this.status
+      Status.Paid => true,
+      _           => false,
+    end
+  end
+end
+```
+
+A real flow — create, read, transition, and branch on the status:
+
+```soli
+# app/controllers/orders_controller.sl
+def create(req)
+  # The enum value is stored as its tag / tagged object automatically.
+  order = Order.create({ status: Status.Pending(reason: "awaiting payment") })
+  redirect("/orders/" + order._key)
+end
+
+def pay(req)
+  order = Order.find(req["params"]["id"])
+  order.status = Status.Paid              # stored as "Paid"
+  order.save()
+  render_json({ "can_ship": order.can_ship() })   # true
+end
+
+def show
+  @order = Order.find(params["id"])
+  # `@order.status` comes back as a Status value, not a raw string:
+  @label = match @order.status
+    Status.Pending(r)   => "Pending: " + r,
+    Status.Paid         => "Paid",
+    Status.Shipped      => "Shipped",
+    Status.Cancelled(r) => "Cancelled: " + r,
+  end
+end
+```
+
+What lands in the database column:
+
+```soli
+# unit variant    → a plain string
+"Paid"
+
+# payload variant → a tagged object
+{ "variant": "Pending", "reason": "awaiting payment" }
+```
+
+To rebuild an enum from a stored value by hand (e.g. a webhook payload), use
+`Status.parse(value)` — it accepts either form. (The factory is `parse`, not
+`from`, because `from` is a reserved word.)
+
+---
+
+## Value Objects
+
+A value object is a small immutable type defined by its fields — an amount of
+money, an email address, a date range. Two of them with the same fields are
+the same value, it cannot change after it is built, and rules it must obey
+(its **invariants**) are checked every time one is made. Inherit the built-in
+`ValueObject`:
+
+```soli
+class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+
+  invariant(:cents, "must not be negative") { @cents >= 0 }
+
+  def plus(other: Amount) -> Amount
+    @with(cents: @cents + other.cents)
+  end
+end
+```
+
+### Building one
+
+Without a constructor, the arguments fill the declared fields — in order, by
+name, or from a hash — and a field left out takes its default:
+
+```soli
+Amount.new(500, "USD")
+Amount.new(cents: 500)            # currency: "EUR"
+Amount.new({"cents": 500})        # a hash, from JSON or params
+new Amount(500)                   # the same as Amount.new(500)
+Amount.new(1, "EUR", 3)           # error: Amount takes 2 fields (cents, currency), got 3 arguments
+```
+
+A class that needs to normalise its input keeps a constructor; it runs while
+the object is still writable, and the invariants run on what it stored:
+
+```soli
+class Email < ValueObject
+  address: String
+
+  new(address: String)
+    @address = address.trim.downcase
+  end
+
+  invariant("must contain @") { @address.includes?("@") }
+end
+
+Email.new("  Ada@Example.COM ").address   # "ada@example.com"
+```
+
+### Equality, immutability, copies
+
+```soli
+a = Amount.new(500)
+a == Amount.new(500, "EUR")              # true — same fields, same value
+[a].includes?(Amount.new(500))           # true; uniq works the same way
+
+a.cents = 1                              # error: value objects are immutable —
+                                         # build a changed copy with with(cents: …)
+b = a.with(cents: 600)                   # a copy; `a` is unchanged
+c = a.with({"currency": "USD"})          # changes as a hash work too
+
+a.to_h                                   # {"cents" => 500, "currency" => "EUR"}
+print(a)                                 # Amount(cents: 500, currency: "EUR")
+```
+
+`with` rebuilds the copy through the constructor, so normalisation and
+invariants apply to it as well. A value object can key a hash, by value:
+`prices[Amount.new(500)] = "small"` is read back by any equal amount, and
+`prices.keys` gives the value objects again.
+
+### Invariants
+
+`invariant("message") { condition }` — or `invariant(:field, "message") { … }`
+to name the field it is about — declares a rule. The block reads the fields
+with `@`; a falsy result throws an `InvariantViolation`, a `DomainError`:
+
+```soli
+try
+  Amount.new(-5)
+catch InvariantViolation e
+  print(e.message)            # Amount: must not be negative
+  print(e.details["field"])   # cents
+end
+```
+
+Invariants also work on models, where they become validation errors instead
+of exceptions — see [Validations → Value fields and invariants](/docs/database/validations#value-fields-and-invariants).
+A domain event is a value object too — `class OrderPaid < DomainEvent`,
+published to its subscribers after the commit: see
+[Models → Domain Events](/docs/database/domain-events).
+A value object in its own file under `app/models/` loads before the models,
+so `value_field :total, Amount` finds it wherever it sits.
+
+---
+
+## Pipeline Operator
+
+### Basic Pipeline Usage
+
+The pipeline operator `|>` passes the left value as the first argument to the right function:
+
+```soli
+def double(x: Int) -> Int { x * 2 }
+def add_one(x: Int) -> Int { x + 1 }
+def square(x: Int) -> Int { x * x }
+
+# Without pipeline (nested calls)
+result1 = square(add_one(double(5)));  # Hard to read
+
+# With pipeline (left to right)
+result2 = 5 |> double() |> add_one() |> square();
+print(result2);  # (5 * 2 + 1)^2 = 121
+```
+
+### Pipeline with Multiple Arguments
+
+```soli
+def add(a: Int, b: Int) -> Int { a + b }
+def multiply(a: Int, b: Int) -> Int { a * b }
+
+# 5 |> add(3) means add(5, 3)
+result = 5 |> add(3) |> multiply(2);
+print(result);  # (5 + 3) * 2 = 16
+
+# More complex chaining
+def subtract(a: Int, b: Int) -> Int { a - b }
+def divide(a: Int, b: Int) -> Int { int(a / b) }
+
+calc = 100
+  |> |x| { subtract(x, 10) }()
+  |> |x| { divide(x, 3) }()
+  |> |x| { multiply(x, 4) }();
+print(calc);  # ((100 - 10) / 3) * 4 = 120
+```
+
+### Pipeline with Collection Methods
+
+Iteration over arrays uses method chaining (`.map`, `.filter`, `.reduce`, `.each`). Lambdas are most concise in pipe form — `|x| x + 1` — but `fn(x) x + 1` works too.
+
+```soli
+numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+# Method chaining with pipe lambdas
+evens_squared = numbers
+  .filter(|x| x % 2 == 0)
+  .map(|x| x * x);
+print(evens_squared);  # [4, 16, 36, 64, 100]
+
+# Reduce with two parameters
+sum_of_evens = numbers
+  .filter(|x| x % 2 == 0)
+  .reduce(|acc, x| acc + x, 0);
+print(sum_of_evens);  # 30
+
+# `.each` for side effects
+numbers.filter(|x| x > 5).each(|x| print(x));
+```
+
+### Real-World Pipeline Examples
+
+```soli
+# Data processing pipeline
+def process_user_data(raw_data: Hash) -> Hash {
+  raw_data
+    |> |d| { d["sanitized_email"] = d["email"].lower().trim(); d }()
+    |> validate_user()
+    |> enrich_profile()
+    |> calculate_metrics()
+}
+
+# HTTP request pipeline
+def fetch_and_process(url: String) -> Hash {
+  url
+    |> HTTP.get_json()
+    |> transform_response()
+    |> validate_data()
+    |> format_output()
+}
+
+# String transformation pipeline
+def format_filename(filename: String) -> String {
+  filename
+    |> |s| { s.lower() }()
+    |> |s| { s.replace(" ", "_") }()
+    |> |s| { s.replace("-", "_") }()
+    |> |s| { s + ".txt" }()
+}
+
+print(format_filename("My Document"));  # "my_document.txt"
+```
+
+### Inline Transformations
+
+```soli
+# Inline transformations on arrays use method chaining + pipe lambdas
+numbers = [1, 2, 3, 4, 5];
+
+result = numbers
+  .map(|x| x * 2)
+  .filter(|x| x > 4)
+  .reduce(|acc, x| acc + x, 0);
+
+print(result);  # 18 (6+8+10)
+
+# Fetch and process user with async pipeline
+def get_user_data(user_id: Int) -> Hash {
+  user_id
+    |> |id| { {"id": id} }()
+    |> fetch_from_db()
+    |> enrich_with_permissions()
+    |> cache_result()
+}
+
+# Complex data pipeline
+sales_data = [
+  {"product": "A", "quantity": 10, "price": 100},
+  {"product": "B", "quantity": 5, "price": 200},
+  {"product": "C", "quantity": 15, "price": 50},
+];
+
+total_revenue = sales_data
+  .map(|sale| sale["quantity"] * sale["price"])
+  .reduce(|acc, rev| acc + rev, 0);
+
+print("Total Revenue: $" + str(total_revenue));  # $2750
+```
+
+---
+
+## Modules
+
+### Creating Modules
+
+```soli
+# math.sl - A module exporting utility functions
+
+# Private function (not exported)
+def validate_number(n: Int) -> Bool {
+  n >= 0
+}
+
+# Exported functions
+export def add(a: Int, b: Int) -> Int {
+  a + b
+}
+
+export def subtract(a: Int, b: Int) -> Int {
+  a - b
+}
+
+export def multiply(a: Int, b: Int) -> Int {
+  a * b
+}
+
+export def divide(a: Int, b: Int) -> Float {
+  if (b == 0) {
+    panic("Division by zero");
+  }
+  float(a) / float(b)
+}
+
+export def factorial(n: Int) -> Int {
+  if (n <= 1) {
+    return 1;
+  }
+  n * factorial(n - 1)
+}
+
+export def fibonacci(n: Int) -> Int {
+  if (n <= 1) {
+    return n;
+  }
+  fibonacci(n - 1) + fibonacci(n - 2)
+}
+```
+
+### Bounded Contexts
+
+A class nested in a module is named after it — `Billing::Invoice`, as
+`print`, `.class` and error messages show — so two parts of an application
+can each have their own `Invoice`. A module may be declared again in another
+file, which adds to it, so one context can spread over several files:
+
+```soli
+# app/models/billing/invoice.sl
+module Billing
+  class Invoice < Model
+    belongs_to("customer")          # Billing::Customer, table billing_customers
+  end
+end
+
+# app/models/billing/customer.sl — the same module, reopened
+module Billing
+  class Customer < Model
+    has_many("invoices")
+  end
+end
+
+# app/models/shipping/invoice.sl
+module Shipping
+  class Invoice < Model             # table shipping_invoices
+  end
+end
+```
+
+Inside a module, its classes are read unqualified — `Invoice` in a method
+of `Billing::PayInvoice` (or in a block there, or a module function) is
+`Billing::Invoice`; outside, write `Billing::Invoice`. The module is looked
+in when no global has that name, so a top-level `Invoice` would win — name
+the context (`Billing::Invoice`) where both exist.
+
+A class that is an implementation detail of its context is declared
+`private class`: code inside the module uses it, code outside gets an error
+(`Billing::Ledger is private to Billing`), with `::` or a dot. That is what
+keeps a context's boundary a rule rather than a habit — other contexts reach
+it through its public classes and its events.
+
+```soli
+module Billing
+  private class Ledger            # only Billing's code sees it
+    static def balance -> Int
+      42
+    end
+  end
+
+  class Report
+    static def total -> Int
+      Ledger.balance
+    end
+  end
+end
+
+Billing::Report.total             # 42
+Billing::Ledger.balance           # error: Billing::Ledger is private to Billing
+```
+
+A model can be private too. Billing's code and Billing's relations use it —
+`account.ledgers`, and writes through that relation — while another context
+reaches it neither by name nor through a relation of its own: a `belongs_to`,
+`has_many` or `.includes` toward it from `Shipping` raises the same way.
+
+```soli
+module Billing
+  private class Ledger < Model      # table billing_ledgers
+  end
+
+  class Account < Model
+    has_many("ledgers")
+  end
+end
+
+module Shipping
+  class Parcel < Model
+    belongs_to("ledger", {"class_name": "Billing::Ledger"})
+  end
+end
+
+account.ledgers.create({"amount": 30})   # through Billing's public class
+account.ledgers.count                     # 1
+parcel.ledger                             # error: Shipping::Parcel cannot reach Billing::Ledger
+                                          # through a relation: Billing::Ledger is private to Billing
+```
+ A declared return type may name a class of the module by
+its short name (`-> Invoice`).
+
+A controller can live in its context too: `module Billing` wrapping
+`class InvoicesController < Controller` in
+`app/controllers/billing/invoices_controller.sl` answers
+`billing/invoices#index` (the router tries `BillingInvoicesController`, then
+`Billing::InvoicesController`, then `InvoicesController`) and reads the
+context's classes unqualified.
+
+A model in a context gets its own collection (`billing_invoices`), and its
+relations name models of the same context unless `class_name:` says
+otherwise (`belongs_to("user", {"class_name": "User"})`). Two files that
+declare the same qualified class still stop the boot. `new Billing::Invoice(…)`
+and `Billing::Invoice.new(…)` work on both engines.
+
+### Importing Modules
+
+```soli
+# Import all exports from a module
+import "./math.sl";
+
+print(add(2, 3));        # 5
+print(factorial(5));     # 120
+print(fibonacci(10));    # 55
+
+# Named imports - the names must be exported by the module
+import { add, multiply } from "./math.sl";
+
+sum = add(1, 2);          # 3
+product = multiply(3, 4); # 12
+
+# Aliased imports - import with different names
+import { add as sum, multiply as times } from "./math.sl";
+
+result = sum(10, 20);  # 30
+doubled = times(5, 6); # 30
+```
+
+Those three forms are the whole syntax. There is no namespace import:
+`import "./utils.sl" as utils` is a parse error, and `import * as utils from
+"./utils.sl"` parses but binds no `utils` — it behaves like a whole-file
+import. To group functions under a name, declare a `module` in the file and
+call through it (`Utils.format_date(...)`).
+
+Naming a function in `{ … }` does not hide the rest of the module: a named
+import loads the whole file into the shared global namespace (see below), so
+it checks that the names you list are exported and lets you alias them.
+
+### What an Import Brings
+
+`import` makes a module's exports available, and brings along what they need
+to run: the module's private declarations (functions, classes, enums,
+constants that are not exported) and everything the module imports itself. So
+an exported function can call a helper beside it, and a `mod.sl` can import the
+files next to it and build on them:
+
+```soli
+# utils/strings.sl
+export def shout(s)
+  s.upcase
+end
+
+# utils/mod.sl
+import "./strings.sl"
+
+def punctuate(s)        # private: not exported, still reachable from greet
+  "#{s}!"
+end
+
+export def greet(name)
+  punctuate(shout("hello #{name}"))
+end
+
+# main.sl
+import "./utils/mod.sl"
+print(greet("ada"))     # HELLO ADA!
+```
+
+Besides `def` and `class`, `export` takes `enum`, `const`, `let` and
+`interface`. A module reached along two paths (two files that both import
+`shared.sl`) is included once. Modules share one global namespace, though: a private name is
+not part of the module's interface, but it is defined, and a definition of the
+same name in the importing file replaces it. Give helpers names that will not
+collide.
+
+An import stays inside the project: the directory holding `soli.toml` (without
+one, the directory of the file being run). `../` may climb between folders of
+the project — a spec in `tests/billing/` imports `../support/db.sl` — but not
+out of it, symlinks included, and absolute paths are refused. Path
+dependencies in `soli.toml` (`utils = { path = "./lib/utils" }`) are read from
+that same directory.
+
+### Module Structure Example
+
+```
+my-project/
+├── soli.toml
+├── src/
+│   ├── main.sl
+│   ├── config.sl
+│   └── utils/
+│       ├── mod.sl
+│       ├── string.sl
+│       ├── array.sl
+│       └── datetime.sl
+└── lib/
+    └── math/
+        ├── mod.sl
+        ├── basic.sl
+        └── advanced.sl
+```
+
+```soli
+# src/main.sl
+import "./config.sl"
+import { process_data } from "./utils/mod.sl"
+import { calculate } from "../lib/math/mod.sl"
+
+config = load_config()
+processed = process_data(config)
+print(calculate(processed))
+```
+
+### Package Configuration
+
+```toml
+# soli.toml
+[package]
+name = "my-app"
+version = "1.0.0"
+description = "My awesome Soli application"
+main = "src/main.sl"
+soli_version = "1.16.0"   # minimum Soli version required to run this project
+# soli_version = "=1.16.0" # or pin exactly: soli switches to this version here
+authors = ["Author Name <author@example.com>"]
+
+[dependencies]
+# Local dependency
+utils = { path = "./lib/utils" }
+
+# Git dependency (future)
+# math = { git = "https://github.com/user/math.sl" }
+
+[dev-dependencies]
+test-utils = { path = "./tests/test-utils" }
+
+[features]
+# Optional features
+debug = []
+web = ["some-web-lib"]
+
+[scripts]
+dev = "soli serve"
+build = "soli build --release"
+test = "soli test"
+```
+
+The optional `soli_version` field declares the **minimum** Soli interpreter
+version the project needs — the same idea as Cargo's `rust-version` (MSRV). When
+it is set, `soli serve`, `soli test`, and running a script inside the project
+refuse to start on an older `soli` and print an upgrade message:
+
+```
+Error: this project requires soli >= 1.20.0,
+but you are running soli 1.16.0.
+Upgrade with: soli update
+```
+
+It is a bare minimum: a running version equal to or newer than the declared one
+passes. Omit the field to accept any Soli version.
+
+#### Pinning an exact version
+
+Prefix the version with `=` and the field stops being a floor and becomes a
+**pin**: `soli` run inside the project switches to that exact version.
+
+```toml
+[package]
+soli_version = "=2.0.3"   # this project runs on soli 2.0.3, whatever you typed
+```
+
+The first command in a pinned project fetches that version, verifies its
+published checksum, and caches it under `~/.cache/soli/runtimes/`. Every command
+after that runs from the cache and says nothing:
+
+```
+$ soli test
+  Fetching soli 2.0.3 pinned by /home/me/app/soli.toml ...
+  Downloading linux-amd64 runtime v2.0.3 ...
+  Checksum verified.
+167 passed, 0 failed
+```
+
+The pin is found by walking up from the **current directory**, the way `.nvmrc`
+and rustup toolchain files work. So `cd`-ing into the project is what activates
+it; `soli serve ./other-app` from outside does not adopt `other-app`'s pin.
+
+`soli which` reports what will run, and why:
+
+```
+$ soli which
+soli 2.0.3
+  binary   /home/me/.cache/soli/runtimes/v2.0.3/soli-linux-amd64
+  pinned   /home/me/app/soli.toml
+```
+
+A pin is exact in both directions — `=2.0.3` is not satisfied by 2.0.4, and a
+pre-release does not satisfy the release it precedes. Pinning an *older* version
+than the one you have installed is fine and is often the point.
+
+**Commands that ignore the pin**, because they must act on the soli you actually
+invoked: `soli update`, `soli new`, `soli which`, `--version` and `--help`.
+
+**Escape hatch.** `SOLI_NO_PIN=1` skips the switch entirely, for CI, an
+air-gapped machine, or bisecting a version-dependent bug.
+
+**Older soli binaries ignore the pin** rather than failing on it: they read
+`"=2.0.3"` as an unrecognised minimum, conclude it is satisfied, and carry on.
+So adding a pin does not break collaborators who have not upgraded — it just
+does not switch for them.
+
+> **What a pin means for trust.** A pinned toolchain is downloaded over TLS from
+> the release host and checked against the `.sha256` that host publishes. That
+> proves the bytes arrived intact; it does not prove who made them, exactly like
+> `soli update`. And there is a consequence worth naming: after cloning an
+> unfamiliar repository, `soli test` in it runs an interpreter *that repository
+> chose*. Soli therefore always prints the version and the manifest before
+> fetching, and never fetches for `--version` or `--help`.
+
+#### Lockfile integrity
+
+`soli install`, `soli add` and `soli update` record, in `soli.lock`, a
+**SHA-256 hash of each git or registry dependency's extracted file tree**. It
+sits on a comment line after the package's own line:
+
+```
+math|https://github.com/user/math.sl|3f2a9c…|/home/me/.soli/packages/math/3f2a9c…|main
+#@integrity math|3f2a9c…|sha256-<64 hex characters>
+```
+
+Commit it with the rest of `soli.lock`. The model is **trust on first use**:
+the hash is recorded the first time a given resolved revision is installed and
+checked on every install after that. A new commit — `soli update`, or a
+branch/tag that moved — is a new revision and records a new hash. Path
+dependencies are not hashed, and resolving an `import` at run time does not
+re-check; the check happens at install.
+
+When the installed files do not match, the install is refused:
+
+```
+Integrity check failed for module 'math' at 3f2a9c…: soli.lock expects
+sha256-…, but the installed files hash to sha256-…. Refusing to use it.
+```
+
+- **A fresh download that does not match** is deleted. If the new content is
+  expected (the upstream rewrote history, say), remove the `#@integrity math`
+  line from `soli.lock` and install again to accept it.
+- **An existing cache that does not match** is kept, so you can inspect it.
+  Delete that cache directory (under `~/.soli/packages/`) to re-download.
+
+A download or extraction that fails half-way now removes the half-written cache
+directory; it used to be taken as installed on the next run.
+
+Older `soli` versions ignore `#` lines, so the lockfile stays readable by them.
+If an older `soli` rewrites the lockfile, the integrity lines are dropped and
+recorded again by the next install with a current `soli`.
+
+---
+
+## Built-in Functions
+
+### I/O Functions
+
+```soli
+# Print to stdout
+print("Hello, World!");
+print(42);
+print([1, 2, 3]);
+
+# Print multiple values
+print("Name:", "Alice", "Age:", 30);
+
+# Read input from stdin
+name = input("Enter your name: ");
+print("Hello, " + name + "!");
+
+# Input with default
+age_str = input("Enter age: ", "18");
+age = int(age_str);
+```
+
+### Type Conversion
+
+```soli
+num_str = "42";
+float_str = "3.14";
+
+# String conversions
+num = int(num_str);        # 42
+f = float(float_str);      # 3.14
+s = str(123);              # "123"
+s2 = str(3.14);            # "3.14"
+s3 = str([1, 2, 3]);       # "[1, 2, 3]"
+
+# `to_i` / `to_f` are total over the scalars: every type answers them,
+# including the one that is already that type. So a value whose type you
+# do not control needs one call and no guard around it.
+[7, "7", 7.9, null, true].map(fn(v) v.to_i);   # [7, 7, 7, 0, 1]
+let page = params["page"].to_i;                # not (params["page"] ?? 0).to_i
+
+# Type checking
+let value: Any = "hello";
+print(type(value));  # "String"
+print(type(123));    # "Int"
+print(type(3.14));   # "Float"
+print(type(true));   # "Bool"
+print(type(null));   # "Null"
+```
+
+### Array Functions
+
+```soli
+let arr = [1, 2, 3, 4, 5];
+
+# Length (also available as .len, .length, .size methods)
+print(len(arr));  # 5
+print(arr.len);   # 5
+
+# Range
+let nums = range(1, 6);  # [1, 2, 3, 4, 5]
+
+# Add and remove
+push(arr, 6);   # [1, 2, 3, 4, 5, 6]
+let last = pop(arr);  # 6, arr is now [1, 2, 3, 4, 5]
+
+# Sort
+let unsorted = [3, 1, 4, 1, 5, 9, 2, 6];
+let sorted = unsorted.sort();  # [1, 1, 2, 3, 4, 5, 6, 9]
+
+# Sort by key
+let items = [{"name": "Bob"}, {"name": "Alice"}];
+let sorted_items = items.sort_by("name");  # [{name: Alice}, {name: Bob}]
+
+# Reverse
+let reversed = reverse([1, 2, 3]);  # [3, 2, 1]
+
+# Join
+let joined = join(["a", "b", "c"], ", ");  # "a, b, c"
+```
+
+### Math Functions
+
+```soli
+# Number methods
+print((-5).abs);       # 5
+print(16.sqrt);        # 4.0
+print(2.pow(10));      # 1024
+print([3, 7].min);     # 3
+print([3, 7].max);     # 7
+
+# There is no Math namespace: the operations above are methods on the
+# number itself. Trigonometry, logarithms and exponentials are not in
+# the language today.
+
+# Rounding (number methods)
+print(3.7.floor);      # 3
+print(3.2.ceil);       # 4
+print(3.5.round);      # 4
+print(38.995.round(2)); # 39.0 — rounds the decimal value, not the binary float
+
+# Random — use the crypto builtins (there is no Math.random)
+token = Crypto.random_hex(16);   # CSPRNG hex, see Builtins → Secure Random
+
+# Time
+print(clock());  # Current time in seconds since epoch
+```
+
+### Hash Functions
+
+```soli
+person = {"name": "Alice", "age": 30, "city": "Paris"};
+
+# Keys and values
+keys_list = keys(person);   # ["name", "age", "city"]
+values_list = values(person);  # ["Alice", 30, "Paris"]
+
+# Check existence
+print(has_key(person, "name"));   # true
+print(has_key(person, "email"));  # false
+
+# Merge
+additional = {"country": "France", "email": "alice@example.com"};
+merged = person.merge(additional);
+
+# Delete
+deleted = delete(person, "age");
+print(deleted);  # 30
+print(person);   # {name: Alice, city: Paris}
+
+# Entries
+entries_list = entries(person);  # [["name", "Alice"], ["age", 30], ["city", "Paris"]]
+
+# Clear
+clear(person);
+print(person);  # {}
+```
+
+### File I/O
+
+```soli
+# Write to file
+let content = "Hello, World!\nLine 2";
+barf("output.txt", content);
+
+# Read from file
+let data = slurp("input.txt");
+print(data);
+
+# Binary mode
+barf("data.bin", bytes_data, true);  # true for binary
+let binary_data = slurp("data.bin", true);
+```
+
+### HTTP Functions
+
+```soli
+# GET request (async)
+response = HTTP.get("https://api.example.com/data");
+print(response["status"]);  # 200
+print(response["body"]);    # Response body
+
+# GET JSON and parse automatically
+json_data = HTTP.get_json("https://api.example.com/users");
+print(json_data[0]["name"]);
+
+# POST request
+post_response = HTTP.post("https://api.example.com/submit", {"key": "value"});
+print(post_response["body"]);
+
+# Generic request with options
+custom_request = HTTP.request("DELETE", "https://api.example.com/resource/123", {
+  "headers": {"Authorization": "Bearer token123"},
+  "timeout": 30,
+});
+```
+
+### JSON Functions
+
+```soli
+# Parse JSON string
+json_str = '{"name": "Alice", "age": 30, "scores": [95, 87, 92]}';
+parsed = json_parse(json_str);
+
+print(parsed["name"]);   # "Alice"
+print(parsed["scores"]); # [95, 87, 92]
+
+# Convert to JSON
+data = {"users": [{"name": "Alice"}, {"name": "Bob"}], "count": 2};
+json_string = json_stringify(data);
+# '{"users":[{"name":"Alice"},{"name":"Bob"}],"count":2}'
+```
+
+### Regex Class
+
+```soli
+text = "The quick brown fox jumps over the lazy dog";
+
+# Match check
+has_fox = Regex.matches("fox", text);  # true
+
+# Find matches
+first_word = Regex.find("\\w+", text);  # "The"
+all_words = Regex.find_all("\\w+", text);  # ["The", "quick", "brown", "fox", ...]
+
+# Replace
+replaced = Regex.replace("fox", text, "cat");  # "The quick brown cat..."
+all_replaced = Regex.replace_all("\\s+", text, "-");  # "The-quick-brown-fox-..."
+
+# Split
+words = Regex.split("\\s+", text);  # ["The", "quick", "brown", "fox", ...]
+
+# Capture groups
+date = "2024-01-15";
+captures = Regex.capture("(\\d{4})-(\\d{2})-(\\d{2})", date);
+print(captures["match"]);  # "2024-01-15"
+print(captures[0]);  # "2024" (when using numbered groups)
+print(captures[1]);  # "01"
+print(captures[2]);  # "15"
+
+# Escape special characters
+escaped = Regex.escape("file.txt (1).pdf");
+# "file\\.txt\\ \\(1\\)\\.pdf"
+```
+
+### Cryptographic Functions
+
+```soli
+# Password hashing with Argon2
+let password = "secure_password_123";
+let hash = argon2_hash(password);
+print(hash);  # Long hash string
+
+# Verify password
+let is_valid = argon2_verify(password, hash);  # true
+let is_wrong = argon2_verify("wrong_password", hash);  # false
+
+# X25519 key exchange for secure communication
+let alice_keys = x25519_keypair();
+let alice_private = alice_keys["private"];
+let alice_public = alice_keys["public"];
+
+let bob_keys = x25519_keypair();
+let bob_private = bob_keys["private"];
+let bob_public = bob_keys["public"];
+
+# Compute shared secrets
+let alice_shared = x25519_shared_secret(alice_private, bob_public);
+let bob_shared = x25519_shared_secret(bob_private, alice_public);
+
+print(alice_shared == bob_shared);  # true - same shared secret!
+
+# Derive public key from private
+let derived_public = x25519_public_key(alice_private);
+
+# Ed25519 digital signatures
+let ed_keys = ed25519_keypair();
+let private_key = ed_keys["private"];
+let public_key = ed_keys["public"];
+
+# Sign a message
+let message = "Hello, this message is signed";
+let signature = ed25519_sign(message, private_key);
+
+# Verify signature
+let is_valid = ed25519_verify(message, signature, public_key);
+print(is_valid);  # true
+```
+
+### HTML Functions
+
+```soli
+# Escape HTML special characters
+user_input = "<script>alert('xss')</script>";
+escaped = html_escape(user_input);
+# "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;"
+
+# Unescape HTML entities
+html = "&lt;div&gt;Content&lt;/div&gt;";
+unescaped = html_unescape(html);  # "<div>Content</div>"
+
+# Sanitize HTML (remove dangerous tags)
+raw_html = "<div><script>evil()</script><p>Safe content</p></div>";
+safe = sanitize_html(raw_html);
+# "<div><p>Safe content</p></div>"
+```
+
+---
+
+## DateTime & Duration
+
+### Creating DateTime Instances
+
+```soli
+# Current local time
+now = DateTime.utc();
+print(now.to_string);  # "2024-01-15 10:30:00"
+
+# Parse from ISO 8601 string
+parsed = DateTime.parse("2024-01-15T10:30:00");
+print(parsed.year());    # 2024
+print(parsed.month());   # 1
+print(parsed.day());     # 15
+
+# Parse with timezone
+with_tz = DateTime.parse("2024-01-15T10:30:00+05:00");
+
+# Create from Unix timestamp
+from_timestamp = DateTime.from_unix(1705315800);
+```
+
+### DateTime Methods
+
+```soli
+dt = DateTime.parse("2024-01-15T10:30:45");
+
+# Component accessors
+print(dt.year());       # 2024
+print(dt.month());      # 1
+print(dt.day());        # 15
+print(dt.hour());       # 10
+print(dt.minute());     # 30
+print(dt.second());     # 45
+
+# Weekday (0 = Monday, 6 = Sunday)
+print(dt.weekday());    # "monday" (or 0)
+
+# Conversion
+unix_ts = dt.to_unix();           # 1705315845
+iso_str = dt.to_iso();            # "2024-01-15T10:30:45"
+human = dt.to_string;           # "2024-01-15 10:30:45"
+
+# Formatting
+custom = dt.format("%Y-%m-%d");     # "2024-01-15"
+time_only = dt.format("%H:%M:%S");  # "10:30:45"
+
+# Formatting with locale (I18n)
+fr = dt.format("%A %d %B %Y", "fr");  # "lundi 15 janvier 2024"
+es = dt.format("%A %d %B %Y", "es");  # "lunes 15 enero 2024"
+```
+
+### DateTime Arithmetic
+
+```soli
+let now = DateTime.utc();
+
+# Add durations
+let tomorrow = now.add(Duration.days(1));
+let next_week = now.add(Duration.weeks(1));
+let in_30_minutes = now.add(Duration.minutes(30));
+let next_month = now.add(Duration.days(30));
+
+# Subtract durations
+let yesterday = now.sub(Duration.days(1));
+let last_week = now.sub(Duration.weeks(1));
+
+# Difference between DateTimes
+let start = DateTime.parse("2024-01-01T00:00:00");
+let end = DateTime.parse("2024-01-15T12:30:00");
+let diff = end.sub(start);
+print(diff.total_days());   # 14.5
+print(diff.total_hours());  # 348.0
+```
+
+### Duration Class
+
+```soli
+# Create duration from components
+dur1 = Duration.days(7);           # 7 days
+dur2 = Duration.hours(24);         # 24 hours (same as 1 day)
+dur3 = Duration.minutes(90);       # 90 minutes
+dur4 = Duration.seconds(3600);     # 3600 seconds (1 hour)
+
+# Duration between two DateTimes
+dt1 = DateTime.parse("2024-01-01T00:00:00");
+dt2 = DateTime.parse("2024-01-02T12:00:00");
+between = Duration.between(dt1, dt2);
+
+# Duration methods
+print(between.total_seconds());  # 108000.0
+print(between.total_minutes());  # 1800.0
+print(between.total_hours());    # 30.0
+print(between.total_days());     # 1.25
+print(between.to_string);      # "1 day, 6 hours"
+```
+
+### Practical DateTime Examples
+
+```soli
+# Calculate age from birthdate
+def calculate_age(birthdate: DateTime) -> Int {
+  now = DateTime.utc();
+  age = now.year() - birthdate.year();
+  if (now.month() < birthdate.month() ||
+    (now.month() == birthdate.month() && now.day() < birthdate.day())) {
+    age = age - 1;
+  }
+  age
+}
+
+birthdate = DateTime.parse("1990-05-15");
+print(calculate_age(birthdate));  # e.g., 33
+
+# Format relative time
+def relative_time(dt: DateTime) -> String {
+  now = DateTime.utc();
+  diff = now.sub(dt);
+
+  seconds = diff.total_seconds();
+  if (seconds < 60) {
+    return "just now";
+  }
+  if (seconds < 3600) {
+    mins = int(seconds / 60);
+    return str(mins) + (mins == 1 ? " minute ago" : " minutes ago");
+  }
+  if (seconds < 86400) {
+    hours = int(seconds / 3600);
+    return str(hours) + (hours == 1 ? " hour ago" : " hours ago");
+  }
+  if (seconds < 604800) {
+    days = int(seconds / 86400);
+    return str(days) + (days == 1 ? " day ago" : " days ago");
+  }
+  dt.to_string
+}
+
+# Check if date is in the past
+def is_past(dt: DateTime) -> Bool {
+  now = DateTime.utc();
+  dt.to_unix() < now.to_unix()
+}
+
+# Get start of day
+def start_of_day(dt: DateTime) -> DateTime {
+  DateTime.parse(
+    str(dt.year()) + "-" +
+    str(dt.month()) + "-" +
+    str(dt.day()) + "T00:00:00"
+  )
+}
+
+# Get business days between two dates
+def business_days(start: DateTime, end: DateTime) -> Int {
+  count = 0;
+  current = start;
+  while (current.to_unix() <= end.to_unix()) {
+    weekday = current.weekday();
+    if (weekday != "saturday" && weekday != "sunday") {
+      count = count + 1;
+    }
+    current = current.add(Duration.days(1));
+  }
+  count
+}
+```
+
+---
+
+## Linting
+
+Soli includes a built-in linter (`soli lint`) that catches style issues and code smells without executing your code.
+
+### Usage
+
+```bash
+soli lint              # all .sl files in current directory (recursive)
+soli lint src/         # lint a directory
+soli lint app/main.sl  # lint a single file
+```
+
+Exit code: `0` = clean, `1` = issues found.
+
+### Locale Files Are Skipped
+
+Translation tables are data that happens to be written in Soli — long sentences in a hash literal, one key per line. Style rules over them produce hundreds of `style/line-length` hits nobody will act on, drowning out the real findings. Walking a directory skips them:
+
+- anything under a directory named `locales/` (the `config/locales/` convention), and
+- a file whose stem is `locale_<tag>` or `<tag>_locale`, where the tag looks like a locale code — `locale_fr.sl`, `locale_zh-Hans.sl`, `pt_BR_locale.sl`.
+
+The tag check is narrow on purpose, so helpers *about* locales keep being linted: `locale_helper.sl` and `locale_switcher.sl` are code, not data. Skipped files are counted in the summary line, and naming one explicitly always lints it:
+
+```bash
+soli lint app/helpers/
+# No issues found. (9 locale files skipped)
+
+soli lint app/helpers/locale_fr.sl   # explicit path — always linted
+```
+
+### Output Format
+
+```
+app/main.sl:12:5 - [naming/snake-case] variable 'myVar' should use snake_case
+app/main.sl:30:9 - [smell/unreachable-code] unreachable code after return statement
+
+2 issue(s) found in 1 file(s)
+```
+
+### Rules
+
+| Rule | Description |
+|---|---|
+| `naming/snake-case` | Variables, functions, methods, and parameters should use `snake_case` |
+| `naming/pascal-case` | Classes and interfaces should use `PascalCase` |
+| `style/empty-block` | Blocks should not be empty |
+| `style/line-length` | Lines should not exceed 120 characters |
+| `smell/unreachable-code` | Code after a `return` statement is unreachable |
+| `smell/empty-catch` | Catch blocks should not be empty (silently swallowing errors) |
+| `smell/deep-nesting` | Nesting depth should not exceed 4 levels |
+| `smell/duplicate-methods` | A class should not have two methods with the same name |
+| `smell/dangerous-server-builtin` | Calls to `db_query_raw`, `Trusted.*`, `System.shell` / `System.shell_sync`, or backtick command substitution from `app/controllers/`, `app/middleware/`, or `app/views/`. Suggests the safe alternative: parameterised `@sdbql{ ... #{value} ... }`, the jailed `File.*` API, or `System.run([...])` with an argv array. Models, migrations, and tests are out of scope. |
+| `style/redundant-model-import` | No `import "../models/*.sl"` inside `app/controllers/` — models are auto-loaded |
+| `idiom/nil-comparison` | Prefer `.nil?` / `!x.nil?` over `== nil` / `!= nil` (also catches `null`) |
+| `idiom/prefer-blank` | Prefer `.blank?` / `.present?` over comparing to an empty string (`.blank?` also covers nil) |
+| `idiom/prefer-includes` | Replace a chain of 3+ same-value `==`/`!=` comparisons with `.includes?` |
+| `idiom/prefer-to-s` | Prefer `.to_s` over `?? ""` — it renders nil as the empty string, and gives the expression one type instead of two |
+| `idiom/manual-find-guard` | Drop the nil-check after `Model.find` — it raises on a miss (handled as a 404); use `find_by`/`first_by` for "or nil" |
+| `idiom/redundant-template-escape` | `<%= h(x) %>` / `<%= attr(x) %>` / `<%= html_escape(x) %>` in a `.slv` — `<%= %>` already HTML-escapes, so this escapes twice and renders literal `&#x27;`/`&amp;`. Write the expression bare, or use `<%- %>` for pre-escaped HTML |
+| `security/unfiltered-mass-assignment` | `Model.create(params)` / `.update` / `.create_many` in `app/controllers/` or `app/services/` with the raw request hash. Whitelist with `permit(params, { "field": true })` or `this._permit_params(params)` |
+| `component/props` | A component's `props(...)` declaration must use string-literal names with no duplicates |
+| `docs/openapi` | A controller action's OpenAPI doc comments: unknown tag, `@response` without a status, `@param` without a name, JSON that does not parse |
+
+### Suppressing Warnings
+
+When a warning is a known false-positive or an intentional exception, suppress it inline with a directive comment.
+
+**Single-line forms.** `disable-next-line` covers the line below; `disable-line` covers the same line.
+
+```soli
+# soli-lint-disable-next-line smell/dangerous-server-builtin
+if Trusted.is_dir(wt_path)
+  ...
+end
+
+Trusted.read(p)  # soli-lint-disable-line smell/dangerous-server-builtin
+```
+
+**Block forms.** `disable` / `enable` toggle a rule for a region of code. Useful when several adjacent lines are intentional exceptions:
+
+```soli
+# soli-lint-disable smell/dangerous-server-builtin
+exists = Trusted.is_dir(path)
+data   = Trusted.read(path)
+# soli-lint-enable smell/dangerous-server-builtin
+```
+
+- Omit the rule name to suppress every rule (e.g. `# soli-lint-disable`). Pass a comma-separated list to scope to multiple rules.
+- An `enable` for a specific rule re-enables only that rule, even if the prior `disable` was a blanket one.
+- A block `disable` with no matching `enable` runs to the end of the file.
+- Prefer naming the exact rule so unrelated warnings still surface.
+
+### Editor Integration
+
+The VS Code / Cursor extension (`editors/vscode/`) provides full Language Server Protocol (LSP) support for Soli, including:
+
+- **Real-time linting** - warnings and errors displayed inline as you type
+- **Hover information** - documentation for functions, classes, and builtins
+- **Autocomplete** - suggestions for keywords, types, and symbols
+- **Go to definition** - jump to symbol definitions
+- **Find references** - locate all uses of a symbol
+- **Document symbols** - outline view of classes, functions, and methods
+- **Code folding** - fold code blocks and classes
+
+#### Installation
+
+**From VSIX (recommended):**
+
+```bash
+cd editors/vscode
+vsce package
+# Install the generated .vsix file in Cursor/VS Code
+```
+
+**From source:**
+
+Copy the extension folder to your editor's extensions directory:
+
+- **Cursor/VS Code (Linux):** `~/.cursor/extensions/` or `~/.vscode/extensions/`
+- **Cursor/VS Code (macOS):** `~/.cursor/extensions/` or `~/.vscode/extensions/`
+- **Cursor/VS Code (Windows):** `%USERPROFILE%\.cursor\extensions\` or `%USERPROFILE%\.vscode\extensions\`
+
+#### Configuration
+
+The extension works with sensible defaults but supports customization:
+
+```json
+{
+ "soli.lsp.enable": true,
+ "soli.lsp.executablePath": "soli",
+ "soli.lint.enable": true,
+ "soli.lint.onSave": true
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `soli.lsp.enable` | `true` | Enable/disable LSP server |
+| `soli.lsp.executablePath` | `"soli"` | Path to the `soli` binary |
+| `soli.lint.enable` | `true` | Run linter on save |
+| `soli.lint.onSave` | `true` | Lint file when saving |
+
+#### Manual LSP Setup
+
+For editors that support custom LSP servers directly (Neovim, Emacs, etc.), configure:
+
+```lua
+-- Neovim with lspconfig
+require('lspconfig').soli.setup({
+ cmd = {"soli", "lsp"},
+ filetypes = {"soli"},
+ root_dir = lspconfig.util.root_pattern("soli.toml", ".git"),
+})
+```
+
+```json
+// Generic JSON config for LSP-compatible editors
+{
+ "name": "soli",
+ "command": "soli lsp",
+ "filetypes": ["soli"],
+ "rootPatterns": ["soli.toml"],
+ "languageId": "soli"
+}
+```
+
+#### Available LSP Features
+
+| Feature | Description |
+|---------|-------------|
+| `textDocument/completion` | Keywords, types, builtins, and local symbols |
+| `textDocument/hover` | Documentation for symbols and builtins |
+| `textDocument/definition` | Jump to symbol definitions |
+| `textDocument/references` | Find all references to a symbol |
+| `textDocument/documentSymbol` | Hierarchical symbol tree |
+| `textDocument/foldingRange` | Fold classes, functions, and blocks |
+| `textDocument/codeAction` | Quick fixes for lint violations |
+| `textDocument/formatting` | Format document |
+
+---
+
+## Best Practices
+
+### Code style
+
+Soli is written Ruby-style — in apps, specs, docs and `soli new` scaffolds alike.
+
+- **`@field`, not `this.field`** — and `@method()` to call a method on the
+  current object, in any instance method or constructor. `this` stays where there
+  is no instance: `static { … }` blocks, `static def`, `class_methods`, scope
+  bodies (`scope("x", fn() { this.where(...) })`), or the object itself as a
+  value (`validate(this)`).
+- **Ruby-style blocks for iteration** — `xs.map { |x| x * 2 }`,
+  `xs.each do |x| … end` — not `xs.map(fn(x) { return x * 2 })`. A block's last
+  expression is its value. Keep `fn` for a lambda kept in a variable (with
+  braces: `double = fn(x) { x * 2 }`), for `reduce(fn(acc, x) acc + x, 0)`,
+  `grouped(fn() { … })`, pipelines, and function values in a hash.
+- **Implicit returns** — the last expression is the value; `return` is for early
+  exits, and before a last line that would start with `fn(` (read as a named
+  function declaration). A line opening with `(` is its own statement.
+- **No `()` on a zero-argument method call** — `Post.all`, `@post.save`,
+  `name.trim.downcase`, `@greet`, `user.admin?`, `DateTime.utc.to_unix`.
+  Two places keep them: **`Klass.new()`** — a bare `Post.new` reads the
+  class's `new` without calling it, so it is no instance; and a **bare function**
+  (`current_user()`, `session_destroy()`), so a call reads as one — both
+  engines call a zero-argument def, helper or builtin read bare, but a lambda
+  kept in a variable needs them: production leaves a bare one uncalled.
+  `.any?`, `.all?` and `.none?` take a block
+  (`xs.any? { |x| x.done }`); for emptiness write `xs.length > 0`.
+- **A blank line after every guard clause** (`return … if/unless …`,
+  `next if …`), unless the next line is `end`, `else`/`elsif` or another guard.
+  `soli fmt` inserts it.
+- **`nil`, not `null`** — the same value (`nil == null`), but write `nil`;
+  `null` stays inside SDBQL strings and JSON, and is what `print` shows.
+- **No `let` by default, no semicolons** — `name = value`; `let` for a type
+  annotation or to avoid mutating an outer variable.
+- **Ranges are exclusive**: `(1..51).map { |i| … }` yields 1 to 50 — Ruby's
+  `(1..50)` gives 49 items here.
+
+### Variables & Types
+
+```soli
+# Good: type inference when obvious
+count = 10
+name = "Alice"
+
+# Good: meaningful names
+items_per_page = 25
+max_retry_attempts = 3
+
+# Avoid: single-letter names except loop indices and short blocks
+c = 10            # Bad
+item_count = 10   # Good
+```
+
+### Functions
+
+```soli
+# Good: single responsibility, the last expression is the result
+def validate_email(email: String) -> Bool
+  email.contains("@") && email.contains(".")
+end
+
+# Good: guard clauses, then a blank line, then the main path
+def process_order(order: Hash) -> Hash
+  return {"error": "Missing items"} unless order.has_key("items")
+  return {"error": "Missing customer"} unless order.has_key("customer")
+
+  {"total": order["items"].map { |item| item["price"] }.sum()}
+end
+
+# Good: limit parameters — pass a hash instead of five positional ones
+def create_user(info: Hash) -> User
+  User.create(info)
+end
+```
+
+### Collections
+
+```soli
+# Good: bounds check as a guard
+def safe_get(items: Array, index: Int) -> Any
+  return nil unless index >= 0 && index < items.length
+
+  items[index]
+end
+
+# Good: Ruby-style blocks for transformations
+doubled = numbers.map { |x| x * 2 }
+evens = numbers.filter { |x| x % 2 == 0 }
+total = numbers.reduce(fn(sum, x) sum + x, 0)   # reduce takes the function first
+```
+
+### Classes
+
+```soli
+# Good: @field inside the class, no `this.`
+class BankAccount
+  balance: Float
+
+  new(balance: Float = 0.0)
+    @balance = balance
+  end
+
+  def deposit(amount: Float) -> Float
+    return @balance if amount <= 0
+
+    @balance += amount
+  end
+
+  def statement -> String
+    "Balance: #{@balance}"
+  end
+end
+```
+
+### Control Flow
+
+```soli
+# Good: guard clauses instead of nested ifs
+def process(data)
+  return {"error": "No data"} if data.nil?
+  return {"error": "Missing required field"} unless data.has_key("required")
+
+  do_processing(data)
+end
+
+# Good: pattern matching for complex conditions (hash patterns use bare keys)
+def handle_event(event) -> String
+  match event {
+    {type: "click"} => "Button clicked",
+    {type: "error", message: msg} => "Error: #{msg}",
+    _ => "Unknown event"
+  }
+end
+```
+
+---
+
+## Quick Reference
+
+### Hello World
+```soli
+print("Hello, World!");
+```
+
+### Variables
+```soli
+name = "Alice";
+let age: Int = 30;
+const PI = 3.14159;
+```
+
+### Functions
+```soli
+def add(a: Int, b: Int) -> Int {
+  a + b
+}
+
+# `def` is an alias for `fn`
+def greet(name: String)
+  print("Hello, " + name + "!");
+end
+```
+
+### Classes
+```soli
+class Person {
+  name: String;
+  new(name: String) {
+    this.name = name;
+  }
+  def greet() -> String {
+    "Hello, " + this.name
+  }
+}
+```
+
+### Control Flow
+```soli
+if (condition) {
+  # code
+} elsif (other) {
+  # code
+} else {
+  # code
+}
+
+for (item in collection) {
+  # code
+}
+
+while (condition) {
+  # code
+}
+
+match value {
+  pattern => result,
+  _ => default,
+}
+```
+
+### Error Handling
+```soli
+try
+  risky_operation();
+catch e
+  print("Error: " + str(e));
+finally
+  cleanup();
+end
+```
+
+### Collections
+```soli
+arr = [1, 2, 3];
+hash = {"key": "value"};
+
+arr.map(fn(x) x * 2);
+hash.filter(fn(pair) pair[1] > 0);
+```
+
+### Pipeline
+```soli
+value |> fn1() |> fn2();
+```
+
+### Module
+```soli
+# math.sl
+export def add(a: Int, b: Int) -> Int {
+  a + b
+}
+
+# main.sl
+import "./math.sl";
+print(add(2, 3));
+```
+
+---
+
+## Next Steps
+
+- [Installation Guide](/docs/installation/) - Set up your development environment
+- [Quickstart](/docs/quickstart/) - Build your first application
+- [MVC Framework](/docs/introduction/) - Learn the web framework
+- [Routing](/docs/routing/) - Define API routes
+- [Controllers](/docs/controllers/) - Handle HTTP requests
+- [Views](/docs/views/) - Render responses
+- [Middleware](/docs/middleware/) - Add request/response processing
+- [Testing](/docs/testing/) - Write tests for your code

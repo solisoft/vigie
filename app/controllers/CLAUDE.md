@@ -1,0 +1,602 @@
+# Controllers
+
+This directory holds request handlers. **One file per resource**:
+`posts_controller.sl` defines `class PostsController < Controller`. Filenames
+are `snake_case.sl`; class names are `PascalCase` ending in `Controller`.
+
+Controllers stay thin: they pull params off the request, ask a model to do
+the work, and return a response. Validation, persistence, and business rules
+belong on the model — not here.
+
+## The Controller contract
+
+Inherit from `Controller`. The class body holds action methods (one per route)
+plus a `static { ... }` block for layout and lifecycle hooks.
+
+**Every public action documents its route** in a comment right above the
+`def`, one line per route that reaches it. Helpers are not actions: prefix
+them with `_` (the router skips them), put them under a `private` line (a
+private method is never an action, and only callable on `self`), and call them
+as `@_name(...)` or just `_name(...)`.
+
+```soli
+class PostsController < Controller
+  static {
+    this.layout = "application"
+  }
+
+  # GET /posts — every post, newest first
+  def index
+    @posts = @_recent_posts
+    @title = "Posts"
+  end
+
+  def _recent_posts
+    Post.order("created_at", "desc").all
+  end
+end
+```
+
+The class itself uses Ruby-style `class X < Y ... end`, and methods use
+`def name ... end` — but the `static` block **requires braces** (`static { ... }`).
+The Ruby-style `static ... end` form does not parse.
+
+Free-function actions (no class wrapper) also work, but the class form is
+recommended for anything stateful or with hooks. See `docs/controllers.md`
+for the full controller contract.
+
+## The `static { }` block
+
+Set the layout, register `before_action` / `after_action` hooks. The runtime
+calls to `before_action` / `after_action` are no-ops — the controller registry
+**textually scans the class body** at `soli serve` startup to wire hooks up,
+so the syntax has to match what the scanner expects.
+
+```soli
+class PostsController < Controller
+  static {
+    this.layout = "application"
+
+    # Runs on every action.
+    this.before_action = fn(req) {
+      @current_user = session_get("user_id")
+      req
+    }
+
+    # Runs only on the listed actions.
+    this.before_action(:show, :edit, :update, :delete) = fn(req) {
+      @post = Post.find(params["id"])
+      req
+    }
+
+    # after_action receives the response too.
+    this.after_action = fn(req, response) {
+      response
+    }
+  }
+end
+```
+
+A `before_action` returning `req` proceeds; returning a response hash (one
+with a `"status"` key, e.g. `redirect(...)`) short-circuits and that response
+is returned to the client. So does raising one: `halt(401, "Login required")`
+needs no `return`, `forbidden()` answers 403, and a `Post.find` miss — as in
+the lookup above — answers 404.
+
+## Reading the request
+
+Inside an action, `req` is the request hash. The framework also exposes a few
+globals so you don't have to dig:
+
+| Read                  | What it gives you                                              |
+|-----------------------|----------------------------------------------------------------|
+| `params`              | Merged route + query + JSON body (= `req["all"]`). Most common.|
+| `params["id"]`        | Path segment from `/posts/:id`.                                |
+| `req["json"]`         | Parsed JSON body (when the request had one).                   |
+| `req["query"]`        | Just the URL query string params.                              |
+| `req["headers"]`      | Lowercased header hash. `req["headers"]["user-agent"]`.        |
+| `req["method"]`       | `"GET"`, `"POST"`, ...                                          |
+| `req["path"]`         | Request path.                                                   |
+| `req["files"]`        | Array of uploaded files (multipart only). See **Handling file uploads**. |
+| `cookies`             | **Global** read-only hash of parsed cookies. `cookies.theme`.   |
+
+`params` reads route params, query params, and parsed body fields with the
+same key — write `params["id"]` whether the value came from `/posts/:id`,
+`?id=42`, or `{"id": 42}` in the JSON body.
+
+## Response shapes
+
+Soli supports an **implicit render** that covers 80% of cases. Only reach for
+explicit response builders when you need something special.
+
+### 1. Implicit render (preferred for the common case)
+
+If an action returns anything that is **not** a response hash (i.e. doesn't
+have a `"status"` key), the framework auto-renders the default template at
+`app/views/<controller>/<action>.html.slv`. `PostsController#show` →
+`posts/show`. So an action that just sets up view state can be a one-liner:
+
+```soli
+def show
+  @post = Post.find(params["id"])
+end
+```
+
+That's it. No `render(...)` call, no return statement. Every `@field` on the
+instance is auto-injected as a view local (see "@-variables" below).
+
+### 2. Explicit render — non-default template or extra locals
+
+```soli
+def create
+  permitted = @_permit_params(params)
+  @post = Post.create(permitted)
+  if @post._errors
+    @title = "New post"
+    return render("new", {}, { "status": 422 })  # re-render form, @fields included
+  end
+
+  redirect(post_path(@post))
+end
+```
+
+### 3. JSON
+
+```soli
+def show
+  @post = Post.find(params["id"])
+  render_json({ "id": @post.id, "title": @post.title })
+end
+```
+
+`render_json` sets `Content-Type: application/json` and serializes the hash
+for you.
+
+### 4. Plain text
+
+```soli
+def health
+  render_text("OK")
+end
+```
+
+### 5. Redirect
+
+```soli
+redirect("/posts")            # 302 to a path
+redirect(post_path(post))     # use named-route helpers, not hand-built URLs
+redirect(:back)               # back to the Referer if safe
+redirect_external(url)        # opt-in to redirect to a different host
+```
+
+### 6. Short-circuit with `halt`
+
+```soli
+def admin
+  halt(403, "Forbidden") unless current_user.admin
+  @users = User.all
+end
+```
+
+`halt(status, message)` **raises**: it stops the action on the spot and
+answers `status` with `message` as a `text/plain` body — no `return` needed
+(`return halt(...)` works too). It stops the request from wherever it is
+called: an action, a `before_action`, a middleware, or a `_helper` several
+calls deep. Because it is an exception, a `rescue` or `try/catch` around it
+catches it (the value is the message) and the request carries on — keep
+halting code outside them.
+
+### 7. Raw hash — when you need full control
+
+```soli
+def webhook
+  return {
+    "status": 202,
+    "headers": { "Content-Type": "application/json", "X-Request-Id": req["id"] },
+    "body": "{\"ok\":true}"
+  }
+end
+```
+
+Any hash with a `"status"` key is treated as a final response and bypasses
+auto-render.
+
+### 8. Content negotiation with `respond_to`
+
+```soli
+def show
+  @post = Post.find(params["id"])
+  respond_to(req, {
+    "html": fn() { render("posts/show") },
+    "json": fn() { render_json({ "id": @post.id, "title": @post.title }) }
+  })
+end
+```
+
+## `@`-variables are injected into views
+
+Every non-underscore-prefixed instance field you set on the controller is
+auto-exposed as a top-level view local. `@post = Post.find(...)` makes `post`
+available in the template.
+
+```soli
+def index
+  @posts = Post.all
+  @title = "Posts"
+  @filter = params["filter"] ?? "all"
+end
+```
+
+In `app/views/posts/index.html.slv`:
+
+```erb
+<h1><%= @title %></h1>
+<p>Showing: <%= @filter %></p>
+<% for post in @posts %>
+  <li><%= h(post.title) %></li>
+<% end %>
+```
+
+(Both `@title` and bare `title` resolve to the same value — `@` is the
+canonical form.)
+
+**Underscore-prefixed fields are private.** `@_internal_state = ...` is *not*
+exposed to the view — useful for state shared between hooks and actions that
+shouldn't leak into templates.
+
+Because of this, don't pass a data hash to `render` — set `@fields` and let
+the framework do the rest. Call `render("new")` only to render a
+*different* view than the default, and keep the data argument `{}` when you
+need options: `render("new", {}, { "status": 422 })`. The e2e
+`assigns()` helper reports the `@fields` either way.
+
+### Group the reads: one round-trip, not one per `@`-var
+
+An action that sets several `@`-vars from unrelated collections pays a database
+round-trip per read. Wrap them in `grouped(fn() { ... })` and the framework
+defers each read, then fires them as a single combined query:
+
+```soli
+def index
+  @title = "Home"
+  grouped(fn() {
+    @programmes = Programme.visible.limit(6).all
+    @articles   = Article.published.limit(3).all
+    @regions    = Region.all
+  })
+end
+```
+
+Don't read a deferred `@`-var inside the block — that forces an auto-flush and
+costs the extra round-trip you were avoiding. Keep `if @programmes.length == 0`
+fallbacks *after* the block (and wrap several of them in a second `grouped`).
+Full contract, including what is and isn't batched: `app/models/CLAUDE.md` →
+**Coalescing reads (`grouped`)**.
+
+## Full CRUD sample
+
+```soli
+# app/controllers/posts_controller.sl
+
+class PostsController < Controller
+  static {
+    this.layout = "application"
+
+    # Look up @post once for every action that needs it.
+    this.before_action(:show, :edit, :update, :delete) = fn(req) {
+      @post = Post.find(params["id"])
+      req
+    }
+  }
+
+  # GET /posts — implicit render of posts/index
+  def index
+    @posts = Post.all
+    @title = "All posts"
+  end
+
+  # GET /posts/:id — @post set by before_action, implicit render of posts/show
+  def show
+    @title = "Post: #{@post.title}"
+  end
+
+  # GET /posts/new — implicit render of posts/new
+  def new
+    @post = Post.new()
+    @title = "New post"
+  end
+
+  # POST /posts
+  def create
+    @post = Post.create(@_permit_params(params))
+    if @post._errors
+      @title = "New post"
+      return render("new")     # explicit: re-render the form view
+    end
+
+    redirect(post_path(@post))
+  end
+
+  # GET /posts/:id/edit — implicit render of posts/edit
+  def edit
+    @title = "Edit #{@post.title}"
+  end
+
+  # PATCH/PUT /posts/:id
+  def update
+    @post.update(@_permit_params(params))
+    return render("posts/edit") if @post._errors
+
+    redirect(post_path(@post))
+  end
+
+  # DELETE /posts/:id
+  def delete
+    @post.delete
+    redirect(posts_path())
+  end
+
+  # Mass-assignment guard — whitelist the fields users can write.
+  def _permit_params(params)
+    {
+      "title": params["title"],
+      "body":  params["body"]
+    }
+  end
+end
+```
+
+Notes on the sample:
+
+- `before_action(:show, ...)` does the `Post.find` once instead of repeating
+  it in four actions.
+- `_permit_params` is a private helper (the leading `_` makes it
+  non-routable). Only its return value is passed to `Model.create` / `update`.
+- `index` / `show` / `new` / `edit` rely on **implicit render** — they just
+  set `@fields` and exit.
+- `create` and `update` use **explicit render** for the validation-failure
+  re-render, because they need to render a *different* template than the
+  default for the action.
+- All redirects use **named helpers** (`post_path(post)`, `posts_path()`) —
+  never hand-built URL strings.
+
+## Validation re-render flow
+
+`Model.create(attrs)` and `instance.save` always return; on failure they
+populate `_errors` on the returned instance. The controller checks `_errors`,
+re-renders the form view passing the invalid instance, and the view displays
+the errors.
+
+```soli
+@post = Post.create(permitted)
+return render("new") if @post._errors    # view reads @post._errors to show messages
+
+redirect(post_path(@post))
+```
+
+**Don't wrap `Model.find` in nil-checks or `try/catch`.** On miss it raises
+`RecordNotFound`, which the framework converts to a 404 automatically — so a
+manual `if post.nil? ... end` branch is unreachable. Use `find_by(field, val)`
+or `first_by(...)` when you want the "or nil" shape:
+
+```soli
+@post  = Post.find(params["id"])             # raises → 404
+@draft = Post.find_by("slug", params["slug"]) # nil on miss
+```
+
+## Handling file uploads
+
+For `multipart/form-data` requests, the framework parses every file part into
+`req["files"]` — an array of hashes. Use the `find_uploaded_file(req, "field")`
+helper to pull one by form field name; it returns `nil` if no file was
+attached under that name or the request wasn't multipart.
+
+```soli
+photo = find_uploaded_file(params, "photo")
+# nil, or:
+# {
+#   "name":         "photo",                # form field name
+#   "filename":     "vacation.jpg",          # client-supplied filename
+#   "content_type": "image/jpeg",
+#   "size":         184_213,                 # bytes
+#   "data":         "<base64 body>"
+# }
+```
+
+**Don't read the bytes yourself.** When the field is declared with
+`uploader(...)` on the model, hand the file straight to the auto-generated
+`attach_<field>` method — it runs the configured MIME/size validations and
+stores the blob in SoliDB for you:
+
+```soli
+def create
+  @contact = Contact.create(@_permit_params(params))
+  return render("contacts/new") if @contact._errors
+
+  photo = find_uploaded_file(params, "photo")
+  if !photo.nil? && !@contact.attach_photo(photo)
+    # attach_<field> populates @contact._errors on failure (bad MIME,
+    # too large, or storage error). Re-render with the same flow you
+    # use for validation errors.
+    return render("contacts/new")
+  end
+
+  redirect(contact_path(@contact))
+end
+```
+
+For multi-file fields (`uploader("attachments", { "multiple": true, ... })`),
+iterate `req["files"]` directly and attach one by one:
+
+```soli
+def upload_batch
+  @document = Document.find(params["id"])
+  (req["files"] ?? [])
+    .filter { |file| file["name"] == "attachments" }
+    .each { |file| @document.attach_attachments(file) }    # array column; each call pushes one blob
+
+  redirect(document_path(@document))
+end
+```
+
+The whole upload contract (declarations, options, routes, cleanup) is in
+`app/models/CLAUDE.md` → **Attachments and uploads**. Don't re-implement
+blob storage in the controller.
+
+### Form markup
+
+The HTML form needs `enctype="multipart/form-data"` and one `<input type="file">`
+per uploader field. Anything posted under a name that doesn't match an
+uploader is just ignored.
+
+```erb
+<form action="<%= contacts_path() %>" method="post" enctype="multipart/form-data">
+  <input type="text" name="name">
+  <input type="file" name="photo" accept="image/*">
+  <button type="submit">Create</button>
+</form>
+```
+
+The cap on `req["files"]` array length is `SOLI_MAX_UPLOAD_FILES` (default 32
+per request); excess files are dropped before the action runs.
+
+## Cookies and sessions
+
+Cookies are a read-only global; write them with `set_cookie`:
+
+```soli
+@theme = cookies["theme"] ?? "light"     # read
+set_cookie("theme", "dark")              # write (Path=/)
+```
+
+Sessions are read/write via builtins (storage backend configured in
+`config/application.sl`):
+
+```soli
+session_set("user_id", user.id)
+uid = session_get("user_id")        # nil if not set
+session_has("user_id")              # bool
+session_delete("user_id")
+session_regenerate                  # after a successful login (security)
+session_destroy                     # on logout
+```
+
+## Named route helpers
+
+`resources("posts")` in `config/routes.sl` auto-registers a family of helpers
+as globals. Use them — never concatenate URLs by hand.
+
+| Route                | Path helper             | URL helper              |
+|----------------------|-------------------------|-------------------------|
+| `GET    /posts`      | `posts_path()`          | `posts_url()`           |
+| `GET    /posts/new`  | `new_post_path()`       | `new_post_url()`        |
+| `GET    /posts/:id`  | `post_path(post)`       | `post_url(post)`        |
+| `GET    /posts/:id/edit` | `edit_post_path(post)` | `edit_post_url(post)` |
+
+Custom routes named with `name: "..."` get the same treatment:
+`get("/about", "pages#about", name: "about")` → `about_path()` / `about_url()`.
+
+A record fills `:id` from its `id` field, else from `_key` — a record loaded
+by `find`/`all` from SoliDB carries only `_key`, and `post_path(post)` works
+on it all the same.
+
+`*_path` returns a relative path; `*_url` is the absolute form (and respects
+`enable_trust_proxy` if set in `config/application.sl`).
+
+## Documenting an action for OpenAPI
+
+Under `--dev`, `/openapi.json` (and the reference at `/openapi`) describe every
+route. A comment block right above an action documents it **when it contains a
+`@tag` line**; plain comments stay out:
+
+```soli
+# Show one post.
+# @param id String  The post's key
+# @query include String  Comma-separated relations
+# @response 200 {"_key": "42", "title": "Hello"}
+# @response 404 No post with that key
+def show
+  @post = Post.find(params["id"])
+end
+```
+
+Tags: `@param` (path), `@query`, `@header` (`Type!` = required), `@body <JSON>`,
+`@response <code> <JSON or text>`, `@tag`, `@deprecated`, `@hidden`. Without a
+`@body`, the `permit(...)` whitelist (here or in `_permit_params`) describes the
+request body. `soli lint` flags bad tags and bad JSON (`docs/openapi`). Full
+guide: `docs/openapi.md`.
+
+## Spec location
+
+Every controller has a sibling spec at `tests/<name>_controller_spec.sl`
+(scaffold writes `tests/controllers/<name>_controller_spec.sl`). Use the E2E
+client:
+
+```soli
+describe("PostsController") do
+  before_each() do
+    as_guest()
+  end
+
+  test("GET /posts returns 200") do
+    response = get("/posts")
+    assert_eq(res_status(response), 200)
+    assert_hash_has_key(assigns(), "posts")
+  end
+
+  test("POST /posts with invalid params re-renders new") do
+    response = post("/posts", {})
+    assert_eq(res_status(response), 200)
+    assert_eq(view_path(), "posts/new.html")
+  end
+end
+```
+
+E2E helpers: `get` / `post` / `put` / `delete` to make requests; `res_status`,
+`assigns()` (the `@field` hash exposed to the view), `view_path()`,
+`render_template()`, `as_guest()`.
+
+## Do / Don't
+
+| Do                                                       | Don't                                                            |
+|----------------------------------------------------------|------------------------------------------------------------------|
+| Use named route helpers — `post_path(post)`              | Hand-build URLs — `"/posts/" + str(post.id)`                     |
+| Let `Model.find` raise → 404                             | Wrap `Model.find` in `try/catch` or `if record.nil?`             |
+| Whitelist via `_permit_params` before `Model.create`     | Pass `params` (or `req["json"]`) straight to `Model.create`      |
+| Keep actions thin; push rules to the model               | Stuff validation / business logic into controller actions        |
+| Set `@fields` and let the framework auto-render          | Repeat `@field` in `render(...)`'s data hash                     |
+| Wrap an action's unrelated reads in `grouped(fn() {...})`| Pay a round-trip per `@`-var when one query would do            |
+| Use `_`-prefixed methods for non-routable helpers        | Expose helper methods as public actions                          |
+| Put `# GET /posts/:id` above every public action         | Leave an action's route to be guessed from `config/routes.sl`    |
+| Use `find_by` / `first_by` when you want nil-on-miss     | Add `if record.nil?` guards after `find` — they're unreachable   |
+|                                                          | `import "../models/*.sl"` — models are auto-loaded               |
+|                                                          | Use `db_query_raw` / backticks here — push raw SQL to the model  |
+
+## Lints that fire here
+
+- `style/redundant-model-import` — models in `app/models/*.sl` are auto-loaded;
+  importing them from a controller triggers this.
+- `smell/dangerous-server-builtin` — `db_query_raw`, `Trusted.*`, `System.shell`,
+  and backtick commands are flagged inside controllers. Use the model layer
+  or a dedicated service object instead.
+- `smell/deep-nesting` — keep actions ≤4 levels of nesting. If you're past
+  that, the action is doing too much.
+- `smell/unreachable-code` — typically catches dead branches after an early
+  `return` or after a `Model.find` nil-check that can never fire.
+- `smell/undefined-local` — flags reads of a name that's never assigned in
+  the action's scope (catches typos that bypass `let`).
+- `naming/pascal-case` — class name must be `PascalCase`.
+- `naming/snake-case` — action and helper names must be `snake_case`.
+- `docs/openapi` — a mistake in an action's OpenAPI doc comments: unknown tag,
+  `@response` without a status code, JSON that does not parse.
+
+Run `soli fmt` first — it settles indentation, spacing and line length on its
+own, so what lint reports afterwards is the part that needs a decision:
+
+```bash
+soli fmt app/controllers/posts_controller.sl
+soli lint app/controllers/posts_controller.sl
+
+soli fmt app/controllers/     # or the whole directory
+soli lint app/controllers/
+```

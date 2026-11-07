@@ -1,0 +1,655 @@
+# Configuration
+
+Soli loads environment variables from the process, then from `.env`, and finally from `.env.{APP_ENV}` when `APP_ENV` is set. Environment-specific files override `.env`, except variables listed in `SOLI_PROTECT_ENV`.
+
+```bash
+# .env
+APP_ENV=development
+SOLIDB_HOST=http://localhost:6745
+SOLIDB_DATABASE=myapp_development
+```
+
+Keys must match `[A-Za-z_][A-Za-z0-9_]*`. Values cannot contain `\0`, `\r`, or `\n` — entries with control characters are skipped at load time with a warning on stderr. This avoids HTTP-header-split / log-injection vectors when an env value flows downstream into responses or structured logs.
+
+The files are read from the app folder passed to `soli serve`. When serving a bundle (`soli serve app.soli`) or running a standalone executable (`soli build --standalone`), they are read from the directory containing the `.soli` file / the executable — dotfiles are never included in a bundle, so ship the `.env` alongside the artifact.
+
+## Application Environment
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `APP_ENV` | Selects `.env.{APP_ENV}` and marks test mode for features that need it. | unset |
+| `SOLI_PROTECT_ENV` | Comma-separated variable names that `.env.{APP_ENV}` must not override. Mostly used by the test runner. | unset |
+| `SOLI_DB_ADAPTER` | Single-connection backend when `config/database.toml` is absent: `solidb` (default), `postgres`, `mysql`, `sqlite`, or `d1` (Cloudflare D1, edge build only — see [Cloudflare Workers](edge.md#cloudflare-d1)). SQL adapters are a document subset (CRUD, hash filters, aggregates, includes batching, migrations). Multi-DB apps use `config/database.toml` instead — see [Multiple Databases](multi-database.md). Per-adapter notes: [PostgreSQL](postgres.md), [MySQL](mysql.md), [SQLite](sqlite.md). | `solidb` |
+| `DATABASE_URL` | Connection URL for SQL adapters (e.g. `postgres://user:pass@localhost:5432/myapp`, or a path such as `sqlite://db/app.sqlite3`). Required when `SOLI_DB_ADAPTER` is `postgres`, `mysql`, or `sqlite`; for `d1` it names the Worker's binding (`d1://DB`, the default). Ignored for SoliDB. Named SQL connections in TOML use `url =` per connection. Create the database itself with `soli db:create`. | unset |
+| `SOLI_DB_POOL_SIZE` | Default SQL pool size (single-connection mode). TOML `pool = N` overrides per connection. | `10` |
+
+## Server And Development
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_HOST` | IP address the server binds to. Set `127.0.0.1` to keep a dev server off the LAN (only local processes can connect); the default listens on all interfaces. An invalid value is a startup error. [File mode](static-server.md) defaults to `127.0.0.1` instead. | `0.0.0.0` |
+| `SOLI_WORKERS` | Number of request-handling worker threads. Each worker is an interpreter of its own (its own classes, environments and builtins; the parsed code is shared), so this is the primary lever on baseline RSS. Defaults to the number of CPU cores; when `APP_ENV=production` (or `prod`) and this is unset, defaults to **2** so a many-core box does not open one interpreter per core. Set explicitly (or pass `--workers N`) to opt into more throughput. | CPU cores; **2** in production |
+| `SOLI_COROUTINES` | **Experimental.** `1` runs each request on a coroutine of its own, so a request waiting on an outbound HTTP call (`HTTP.get`, `get_json`, `request`, `HTTP.stream`, …) or a SoliDB query hands its worker over to other requests instead of holding it. Soli code does not change. The call still blocks — the request does not suspend — inside a transaction, a `grouped` block, a render, or a `stream` block; the SQL adapters (Postgres, MySQL, SQLite) still block their worker. The worker's SoliDB traffic moves to the server's shared runtime (as with `SOLI_DB_SHARED_REACTOR=1`). A route runs on a coroutine only once it has waited: until then its requests run directly on the worker and cost nothing more (routes are grouped by method and path, ids masked). Ignored under `--dev`. Requests on one worker interleave at those waits, so two of them can see each other's writes to class static fields in between (request state — session, cookies, `params`, the transaction — stays each request's own). | off |
+| `SOLI_WORKER_CONCURRENCY` | With `SOLI_COROUTINES=1`: how many requests one worker runs at once, waiting ones included. A worker at the cap takes no new request until one finishes. | `32` |
+| `SOLI_DEFAULT_LOCALE` | The locale a request starts from when nothing else decides, and the one a translation lookup falls back to when the active locale has no entry. The resolution order per request is session `locale`, then a `locale` cookie, then `Accept-Language` matched against the locales in `config/locales/`, then this. | `en` |
+| `SOLI_WS_WORKERS` | Worker threads reserved exclusively for realtime (WebSocket/LiveView) events, so a burst of them can't starve HTTP and a slow handler can't delay presence/broadcasts. The reservation costs a whole HTTP worker, so by default it only applies once the pool has **4 or more** workers; below that every worker drains both channels and realtime shares the pool. Set it explicitly to force the split at any size (`1` on a 2-worker pool leaves 1 HTTP worker), or `0` to disable it entirely. Always clamped so at least one HTTP worker remains. The startup line reports the resulting layout. Each EUI session is pinned to one of the realtime workers (by session id), so its renders always run on the thread that holds its kept subtrees and the application's own per-worker objects. | a quarter of the pool (at least `1`) when workers ≥ 4, else `0` |
+| `SOLI_REQUEST_LOG` | Enables per-request `[LOG] METHOD PATH - STATUS (Xms)` lines on stdout when set to `1` or `true`. Always on under `--dev`. Alias for `SOLI_LOG=access`. | `false` |
+| `SOLI_LOG` | Comma-separated production log channels: `access` (the request line), `query` (AQL queries with binds + duration; bind values whose name looks like a credential are logged as `[REDACTED]`), `http` (outgoing `HTTP.*` calls; query-string values whose parameter name looks like a credential are logged as `[REDACTED]`), `timing` (middleware/view/phase breakdown), or `all`. Each detail channel prints an indented block under the access line and implies `access`. Lets you see the rich per-request diagnostics — otherwise gated to `--dev` — without paying for full dev mode. | unset |
+| `SOLI_LOG_FORMAT` | Shape of production request (and error) logs: `text` (default multi-line human output) or `json` (one NDJSON object per event on stdout/stderr — ship to Loki, CloudWatch, Datadog, …). Detail channels become nested arrays on the same object; secret-bearing bind/query values stay redacted. | `text` |
+| `SOLI_SLOW_REQUEST_MS` | Slow-request threshold in milliseconds. A request whose total time (queue wait + handler) reaches it prints a full `[SLOW]` detail block — every `SOLI_LOG` channel plus the queue-wait split — while faster requests stay silent. Composes with `SOLI_LOG`. | unset |
+| `SOLI_OTEL` | Set to `1`/`true`/`yes` to enable OpenTelemetry tracing. Reuses the same per-request span tree the dev-bar flamegraph builds (middleware, action, views, DB, HTTP). Honours inbound W3C `traceparent`, echoes it on the response, adds it (with the inbound `tracestate`) to every outgoing `HTTP.*` call, traces background jobs, and exports spans over OTLP/HTTP JSON. When set without an endpoint, defaults to `http://127.0.0.1:4318/v1/traces` (sidecar collector). | unset |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector base URL (e.g. `http://otel-collector:4318`). Enables tracing even when `SOLI_OTEL` is unset. Soli appends `/v1/traces` unless the value already ends with it. | unset |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Full traces URL override (takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT`). | unset |
+| `OTEL_SERVICE_NAME` | `service.name` resource attribute on exported spans, log records and metrics; also `service` on JSON log lines and DogStatsD tags. Wins over `service.name` in `OTEL_RESOURCE_ATTRIBUTES` and over `DD_SERVICE`. | `DD_SERVICE`, else `soli` |
+| `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes (traces, logs and metrics) as comma-separated `key=value` pairs, percent-decoded (e.g. `deployment.environment=prod,service.namespace=shop`). `deployment.environment(.name)` and `service.version` here win over `DD_ENV` / `DD_VERSION`. | unset |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers sent on every OTLP export POST — traces, logs and metrics — `key=value,key2=value2` with percent-decoded values (e.g. `dd-api-key=…` for Datadog's agentless intake). Never printed; an entry with no `=`, an invalid name or a CR/LF in its value is skipped with a warning. | unset |
+| `OTEL_EXPORTER_OTLP_TRACES_HEADERS` / `OTEL_EXPORTER_OTLP_LOGS_HEADERS` / `OTEL_EXPORTER_OTLP_METRICS_HEADERS` | Per-signal headers; a key here replaces the same key (case-insensitive) from `OTEL_EXPORTER_OTLP_HEADERS`. | unset |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | Timeout of one export POST, in milliseconds. OTLP metrics use it when `OTEL_METRIC_EXPORT_TIMEOUT` is unset. | `2000` |
+| `SOLI_OTEL_LOGS` | `1`/`true`/`yes` exports the JSON log events (access lines, `request_error`) as OTLP/HTTP LogRecords, with trace correlation. `OTEL_LOGS_EXPORTER=otlp` does the same. stdout logging is unchanged. | unset |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | Full logs URL. Default: `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/logs`, else `http://127.0.0.1:4318/v1/logs`. | derived |
+| `DD_SERVICE` / `DD_ENV` / `DD_VERSION` | Datadog unified service tagging: fill `service.name` / `deployment.environment` / `service.version` (traces, logs, metrics) when the OTel variables leave them unset, add `service` / `env` / `version` (top level and in `dd`) to JSON log lines, and tag every DogStatsD line `service:` / `env:` / `version:`. | unset |
+| `DD_TAGS` | More global DogStatsD tags after `env:` / `service:` / `version:`, comma- or space-separated (`team:web,region:eu`); its `env` / `service` / `version` entries yield to the resolved ones. | unset |
+| `OTEL_SDK_DISABLED` | Set to `true` to force tracing, OTLP log export and OTLP metrics export off regardless of the other OTEL vars. | unset |
+| `OTEL_TRACES_SAMPLER` | Head sampler: `parentbased_always_on`, `parentbased_always_off`, `parentbased_traceidratio`, `always_on`, `always_off` or `traceidratio`. Parent-based samplers follow the inbound `traceparent`'s sampled flag. An unsampled trace keeps its ids and propagates with flags `00` but is not exported. An unknown value warns once on stderr and the default applies. See [Observability → Sampling](observability.md#sampling). | `parentbased_always_on` |
+| `OTEL_TRACES_SAMPLER_ARG` | Ratio (`0`..`1`) for the `traceidratio` samplers, decided from the trace id. | `1.0` |
+| `SOLI_OTEL_PROPAGATE` | Set to `0`/`false`/`no`/`off` to stop adding `traceparent`/`tracestate` to outgoing `HTTP.*` calls (export is unaffected). On by default, to every host, like the OTel SDKs. A header the caller sets is never replaced. | on |
+| `SOLI_METRICS` | Set to `1`/`true` to collect metrics for the Prometheus text at `GET /_metrics`. A DogStatsD target or OTLP metrics export below turns collection on as well. See [Observability → Metrics](observability.md#metrics-_metrics). | unset |
+| `SOLI_METRICS_BUCKETS` | Histogram buckets in seconds, increasing and comma-separated (e.g. `0.01,0.1,1`), for the built-in `*_seconds` histograms and app histograms. A bad list warns and keeps the defaults. | `0.001` … `10` (13 buckets) |
+| `SOLI_STATSD` | Send app metrics and each request's duration to a DogStatsD agent: `host:port` (port 8125 if left out), `udp://host:port` or `unix:///path`. Wins over `DD_DOGSTATSD_URL` and `DD_AGENT_HOST`; `off` turns DogStatsD off even when those are set. | unset |
+| `DD_DOGSTATSD_URL` | DogStatsD target as the Datadog libraries read it: `udp://host:port` or `unix:///var/run/datadog/dsd.socket`. | unset |
+| `DD_AGENT_HOST` / `DD_DOGSTATSD_PORT` | The Datadog agent host (and DogStatsD port): set, it turns DogStatsD on. | unset / `8125` |
+| `SOLI_OTEL_METRICS` / `OTEL_METRICS_EXPORTER` | `SOLI_OTEL_METRICS=1` or `OTEL_METRICS_EXPORTER=otlp` exports every metric as OTLP/HTTP JSON on an interval, with the same resource and headers as traces and logs. `SOLI_OTEL_METRICS=0` keeps it off. | unset |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Full metrics URL. Otherwise `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/metrics`, otherwise `http://127.0.0.1:4318/v1/metrics`. | unset |
+| `OTEL_METRIC_EXPORT_INTERVAL` / `OTEL_METRIC_EXPORT_TIMEOUT` | OTLP metrics export interval and per-request timeout, in milliseconds. | `60000` / `10000` |
+| `SOLI_DB_POOL_IDLE_SECS` | Idle lifetime (seconds) of pooled SoliDB connections. A retired idle connection means the next query pays a fresh DNS + TCP (+ TLS) connect mid-request. Two defaults, because the two clients can afford different windows: the shared client holds a connection for 90s (its reactor runs continuously, so it sees the server close one and drops it), while a per-worker pool holds one for 25s — a worker's reactor only runs during a query, so between requests nothing notices the peer closing an idle connection and the pool must retire it first. SoliDB closes idle keep-alives after 30s. Setting this overrides both; keep it below the idle-close of whatever is on the other end. | `90` shared, `25` per-worker |
+| `SOLI_DB_KEEP_WARM` | Set to `0` to disable the periodic keep-warm ping that holds a live SoliDB connection in the pool between sparse requests. Only spawned when a DB is configured (`SOLIDB_HOST` or credentials set). | enabled |
+| `SOLI_DB_POOL_MAX_IDLE` | Max idle SoliDB connections kept per host by the shared internal HTTP client. Per-worker DB clients hold one hot connection each and are unaffected; this sizes the pool for the paths that still share a client (async contexts, keep-warm). | `8` |
+| `SOLI_DB_SHARED_REACTOR` | Set to `1` to drive DB queries on the server's shared tokio runtime instead of each worker's own reactor. Escape hatch for the pre-worker-reactor behavior — the default is faster (readiness is polled by the thread that waits on it) and creates no TCP churn. | unset |
+| `SOLI_NAV` | Controls instant-navigation injection (link clicks fetch + swap `<body>` in place instead of a full page load). Set `off`, `false`, `0`, or `no` to disable and fall back to plain hover prefetch. Set `morph` to patch the body into the new page instead of replacing it, on every page (a page can still say `<meta name="soli-nav" content="swap">`; see [Instant Navigation](views.md#instant-navigation)). Read once per process; changing it needs a restart. | enabled (swap) |
+| `SOLI_PREFETCH` | Controls hover prefetch injection (and hover warming inside instant navigation). Set `off`, `false`, `0`, or `no` to disable. Read once per process; changing it needs a restart. | enabled |
+| `SOLI_PREFETCH_TTL` | Freshness window (seconds, clamped 1–300) for a prefetched HTML response, so the click reuses it without a revalidation round-trip — keeps prefetch working behind a CDN. Read once per process; changing it needs a restart. | `30` |
+| `SOLI_ATTACHMENTS_MAX_DIMENSION` | Ceiling (pixels) for the image-transform query parameters served by the built-in attachments controller — `w`, `h`, `thumb`, `square`, and the width/height components of `crop`. A larger value in the URL is silently treated as this one, so a crafted `?w=99999&h=99999` cannot allocate gigabytes. Raise it when the app genuinely serves bigger images (retina heroes, a lightbox gallery) — to what it actually serves, not to an arbitrary number, since this cap is the only bound on the allocation. A missing, non-numeric or non-positive value falls back to the default rather than removing the guard. | `1000` |
+| `SOLI_DEFAULT_URL_HOST` | Host used by `*_url` route helpers outside an active request. | unset |
+| `SOLI_DEFAULT_URL_SCHEME` | Scheme used with `SOLI_DEFAULT_URL_HOST`. | `http` |
+| `SOLI_DEV_FLAME_MAX` | Under `--dev`, how many spans the dev-bar flamegraph draws (the heaviest by duration). `0` draws all of them. `trace.json` is always complete. | `300` |
+| `SOLI_DEV_REPL_ALLOW_REMOTE` | Allows the token-protected dev error-page REPL from non-loopback clients when set to `1`, `true`, or `yes`. Requires `SOLI_DEV_REPL_SECRET` (SEC-051) — the server refuses to start otherwise. | `false` |
+| `SOLI_DEV_REPL_SECRET` | Pins the `/__dev/repl` token to an explicit shared secret instead of an auto-generated UUID. Required when `SOLI_DEV_REPL_ALLOW_REMOTE=1` so the credential is never embedded in dev-mode HTML error pages. | unset |
+| `SOLI_OPENAPI` | Set to `1`/`true` to expose an OpenAPI 3 spec at `/openapi.json` (generated from the routes) and a Scalar API-reference UI at `/openapi`. On by default under `--dev` (`0` turns it off there); elsewhere opt-in (404 otherwise), then served in every environment. See [Routing → OpenAPI](routing.md#openapi-soli_openapi). | unset |
+| `SOLI_OPENAPI_TITLE` | Title of the generated OpenAPI document. | `Soli API` |
+| `SOLI_SHUTDOWN_GRACE_SECS` | How long a `SIGTERM`/`SIGINT` shutdown waits for in-flight requests to finish before exiting anyway. See [Health checks and graceful shutdown](#health-checks-and-graceful-shutdown). `0` exits immediately. | `25` |
+| `SOLI_TRACE_BOOT` | Prints a boot timing trace to stderr when set: each startup phase, then each worker's (`templates and helpers ready`, `app loaded (N files: parse Xms, run Yms)`, `handlers compiled`). | unset |
+
+### Structured logs and OpenTelemetry
+
+Production logs and distributed traces have a dedicated operator guide:
+
+**[Observability](observability.md)** — metrics (`/_metrics`), `SOLI_LOG` channels, `SOLI_LOG_FORMAT=json`, slow-request mode, W3C `traceparent`, OTLP export (traces, opt-in logs), log↔trace joins, and the Datadog setup.
+
+Quick enable:
+
+```bash
+# Machine-parseable access logs
+SOLI_LOG=access SOLI_LOG_FORMAT=json soli serve
+
+# Traces → collector (or SOLI_OTEL=1 for a local :4318 sidecar)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+OTEL_SERVICE_NAME=myapp \
+soli serve
+```
+
+The env rows above (`SOLI_LOG_FORMAT`, `SOLI_OTEL`, `OTEL_*`) are the full knobs; the guide covers fields, span kinds, and limits.
+
+### Health checks and graceful shutdown
+
+Two endpoints let an orchestrator or load balancer see the server's lifecycle. Both are
+plain text, need no authentication, and are always available — there is nothing to enable.
+
+| Endpoint | Meaning | Answers |
+|----------|---------|---------|
+| `GET /_health` | **Liveness** — is this process alive? | `200 ok` for as long as the server runs, *including while it shuts down* |
+| `GET /_ready` | **Readiness** — should traffic be routed here right now? | `200 ready`, or `503 starting` before workers finish booting, or `503 draining` during shutdown |
+
+The distinction matters. A shutting-down process is perfectly healthy — it just does not
+want new work. If `/_health` failed during shutdown, an orchestrator would restart a
+container that was already exiting cleanly. Point liveness probes at `/_health` and
+readiness probes at `/_ready`.
+
+#### What happens on SIGTERM
+
+On `SIGTERM` or `SIGINT` the server drains rather than cutting requests off:
+
+1. `/_ready` starts answering `503 draining`, so the load balancer stops routing here.
+2. New requests get `503 Server shutting down` with `Connection: close`. Probes still answer.
+3. Requests already in flight **run to completion** and return their real response.
+4. Once the last one finishes — or `SOLI_SHUTDOWN_GRACE_SECS` elapses — the process exits `0`.
+
+A second signal skips the wait and exits immediately.
+
+The default 25s sits just under Kubernetes' default 30s `terminationGracePeriodSeconds`, so
+the process exits on its own rather than being `SIGKILL`ed. If you raise one, raise both.
+
+```yaml
+# Kubernetes
+livenessProbe:
+  httpGet: { path: /_health, port: 3000 }
+readinessProbe:
+  httpGet: { path: /_ready, port: 3000 }
+terminationGracePeriodSeconds: 30    # must exceed SOLI_SHUTDOWN_GRACE_SECS
+```
+
+### Parsing And Security Limits
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_DEFLATE_MAX_BYTES` | Maximum decompressed output (in bytes) that `Deflate.inflate` produces before it fails closed. A few-KB highly-repetitive raw-DEFLATE stream can inflate to many GB — a decompression bomb — and the SAML HTTP-Redirect binding feeds `Deflate.inflate` unauthenticated `SAMLRequest`/`SAMLResponse` payloads. Raise it only for legitimately large payloads. | `67108864` (64 MiB) |
+
+### Bundle protection
+
+Used when serving an encrypted / protected `.soli` bundle (see [Encrypted & Protected Bundles](/docs/development-tools/deploy#encrypted-bundles)). These are read at `soli build --encrypt`/`--protect` time, by `soli serve app.soli`, and by standalone executables built with `--standalone`; they may live in the `.env` next to the artifact. Distinct from `SOLI_ENCRYPTION_KEY`, which encrypts model fields.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_BUNDLE_KEY` | The bundle AES key material itself. Simplest option; also handy for local testing. | unset |
+| `SOLI_BUNDLE_AUTH_URL` | URL of a key server. Soli issues a `GET`; the response body (≤ 4 KB, trimmed) is the key material. Revoke the entry to lock the app out. Used only when `SOLI_BUNDLE_KEY` is unset. | unset |
+| `SOLI_BUNDLE_API_KEY` | Sent as the `x-api-key` header on the `SOLI_BUNDLE_AUTH_URL` request — this host's identity to the key server. | unset |
+| `SOLI_BUNDLE_ALLOW_DISK` | Set to `1` to allow a decrypted bundle to extract to the temp dir when `/dev/shm` (RAM-backed tmpfs) is unavailable. Without it, such a boot is refused rather than writing plaintext to persistent disk. | unset |
+| `SOLI_RELEASE_BASE_URL` | Base URL `soli build --standalone --target <t>` **and the version pin** download release runtimes from (layout: `{base}/v{version}/soli-{target}.tar.gz` + `.sha256`). For mirrors and air-gapped machines. Note the pin *executes* what it fetches, where a cross-target build only embeds it — point this at a host you trust. | GitHub releases |
+| `SOLI_NO_PIN` | Set to `1` to ignore an exact `soli_version` pin in `soli.toml` and run the soli you invoked. For CI, air-gapped machines, and bisecting a version-dependent bug. | unset |
+| `SOLI_PINNED_EXEC` | Set by soli on itself when it switches to a pinned version, carrying that version. Its presence stops the child switching again, so a toolchain whose compiled version disagrees with its release tag cannot loop. Not something you set. | unset |
+
+### Production logging (`SOLI_LOG`)
+
+The AQL query log, the outgoing HTTP log, and the middleware/view/phase
+timing breakdown normally only feed the dev bar under `--dev`. `SOLI_LOG`
+turns those same channels on in production and prints them to stdout as an
+indented block under each request's access line — so you can debug a slow
+or failing route on a live server without redeploying in dev mode (which
+would also disable the VM, enable hot-reload, and inject the bar).
+
+```bash
+# Just the access line (same as SOLI_REQUEST_LOG=1)
+SOLI_LOG=access soli serve
+
+# Queries + outgoing HTTP for the whole app
+SOLI_LOG=query,http soli serve
+
+# Everything
+SOLI_LOG=all soli serve
+```
+
+A request with `SOLI_LOG=query,http,timing` prints:
+
+```text
+[LOG] GET /posts - 200 (12.480ms)
+  db: 2 queries (8.210ms)
+    (5.110ms) FOR p IN posts FILTER p.published == @v0 RETURN p binds={"v0":true}
+    (3.100ms) FOR c IN comments FILTER c.post_id == @v0 RETURN c binds={"v0":"abc"}
+  http: 1 call (2.000ms)
+    (2.000ms) GET https://api.example.com/feed -> 200
+  timing:
+    middleware auth (0.420ms)
+    view posts/index (3.050ms)
+      view posts/_card (1.200ms)
+```
+
+The whole block is written with a single `println!` so concurrent worker
+threads never interleave their output. Bind variables and HTTP URLs are
+scrubbed of secret-bearing values before they reach the log.
+
+### Slow-request logging (`SOLI_SLOW_REQUEST_MS`)
+
+`SOLI_LOG=all` prints a block for every request — too noisy to leave on in
+production. `SOLI_SLOW_REQUEST_MS` instead emits the full detail block only
+for requests whose total time (queue wait + handler) crosses the threshold,
+and nothing at all for fast ones:
+
+```bash
+# Log a full breakdown only for requests slower than 100ms
+SOLI_SLOW_REQUEST_MS=100 soli serve
+```
+
+```text
+[SLOW] GET /gather/map - 200 (412.480ms + 0.320ms queue)
+  db: 3 queries (398.210ms)
+    (395.110ms) FOR p IN pins FILTER p.board == @v0 RETURN p binds={"v0":"x"}
+    ...
+  timing:
+    view gather/map (10.050ms)
+```
+
+The access line shows handler time plus the time the request waited in the
+worker queue before being picked up, so a request stuck behind a busy worker
+is distinguishable from a genuinely slow handler. It composes with
+`SOLI_LOG`: explicitly requested channels still print for every request; the
+threshold adds the `[SLOW]` block on top.
+
+### DB connection keep-warm
+
+Pooled SoliDB connections idle out after `SOLI_DB_POOL_IDLE_SECS`. On a quiet
+server, a request arriving after a longer gap used to pay a fresh DNS + TCP
+(+ TLS for remote hosts) connect mid-request — visible as intermittent latency
+spikes. When a DB is configured, `soli serve` now runs a periodic read-only
+`RETURN 1` ping that keeps a live connection pooled at all times (and pre-warms
+the model DB at boot). Disable it with `SOLI_DB_KEEP_WARM=0`.
+
+The ping runs on its own thread, and with one connection pool per worker it can
+only refresh its own — so a worker's connection is instead kept inside the 25s
+idle window described above, short enough that the pool retires it before
+SoliDB's 30s idle close. A worker idle longer than that pays one reconnect on
+its next query, which is the fresh-connect cost the ping avoids elsewhere.
+
+### Keeping memory low
+
+`soli serve` runs a pool of worker **threads** in one process, and each worker
+holds its own interpreter: its classes, environments, compiled bytecode and the
+full builtin surface (`Rc`-based values can't be shared across threads). So
+baseline RSS scales with the worker count, and — for apps with lots of code or
+large in-memory data (e.g. i18n locale tables) — with the size of that app.
+
+The parsed code itself is not per worker. Every application file is parsed
+once, into a cache the whole process shares, and the functions, methods and
+lambdas each worker builds run that one copy of their body. Each worker used to
+copy every body out of it, and that copy was most of what a worker cost: on a
+180-file app (1.4 MB of `.sl`), a worker went from 16.4 MiB to 7.5 MiB, and the
+process at 8 workers from 175 MiB to 97 MiB.
+
+Within a worker the builtin surface is built **once** and shared as the
+enclosing scope of the interpreter's globals, the template engine's environment
+and the view helpers' closure; those three used to be separate full registries.
+Do not expect that to show up in your RSS — a registry turns out to be a few
+hundred KB, so removing two of them per thread sits below the noise of an
+ordinary measurement. The levers below are what actually move the number.
+
+Measuring it at all takes more care than it looks. `ps -o rss=` cannot separate
+a process's own heap from the file-backed pages every `soli` process shares;
+`Pss_Anon` from `/proc/<pid>/smaps_rollup` can, but counts only *resident*
+pages, so on a swapping machine a process reads as smaller the more pressure
+the box is under — add `SwapPss`. Transparent huge pages move anonymous RSS by
+tens of MiB between identical runs, so take a median of several. And compare
+two binaries by alternating them in one session, never by lining up two sweeps
+taken minutes apart: machine drift lands entirely on whichever ran later.
+`scripts/mem-probe.sh` in the repository does all of this, `--ab` included.
+
+The levers, cheapest first:
+
+| Lever | Effect |
+|-------|--------|
+| `SOLI_WORKERS=N` | The biggest one — each worker is a full interpreter. With `APP_ENV=production`, the default is already **2** (not one-per-core). Raise it for throughput, or set `1` for a low-traffic service. Note the throughput floor: a worker blocks for the whole of each database round-trip, so a DB-backed route tops out near `workers × (1 / query latency)` — roughly 11k req/s per worker against a loopback SoliDB. Routes that never touch the DB are unaffected (a single worker serves >140k req/s). Outbound HTTP calls block the same way. With `SOLI_COROUTINES=1` a request waiting on either gives its worker to others: on 2 workers an action calling a 500 ms API goes from about 4 req/s to about 115, and one writing then counting SoliDB rows from about 1,400 to about 3,700 (`SOLI_WORKER_CONCURRENCY` × workers in flight); reads that already took microseconds stay as fast. |
+| `SOLI_JOB_WORKERS=1` (or `0`) | The job worker pool is a second set of full interpreters. It defaults to `1`; `0` disables the job engine in this process (run `soli jobs` separately). |
+| `SOLI_JOB_VIEW_HELPERS=0` | Drops view helpers (incl. i18n locale tables) from every job interpreter when jobs don't render helper-using templates. |
+| Slim Cargo features | Build only the subsystems you need (see below). Omitting SQL clients and PASETO shrinks the binary and the code pages mapped into every worker. |
+| `MIMALLOC_PURGE_DELAY=0` | mimalloc returns freed pages to the OS promptly instead of after its default delay. The leftovers of boot no longer need it: the server hands them back itself once the boot thread and each worker have loaded the app (they would otherwise sit idle on pages they freed). What it still trims is the churn of serving. Read by the allocator at startup, so set it in the environment before launch. Trade-off: a few more `madvise`/decommit syscalls under churny allocation. |
+| Fewer/lazier locales | If most of an app's per-worker memory is i18n tables, load only the locales you serve (or move them to `config/locales/*.yml`, which the framework loads **once** process-wide into a shared store rather than per-worker). |
+
+#### Slim binary (Cargo features)
+
+`cargo install` / CI use the **default** feature set so published binaries match a full product build. Optional subsystems can be dropped at **compile time** when you build from source:
+
+| Feature | Default | What it pulls in |
+|---------|---------|------------------|
+| `embedding` | on | Vector / embedding helpers |
+| `llm` | on | `llm_generate` (OpenAI-compatible chat) |
+| `codegraph` | on | `soli graph build` on non-Soli repos (tree-sitter + grammars) |
+| `paseto` | on | `Paseto` class (`pasetors` crate) |
+| `postgres` | on | PostgreSQL document adapter + client pool |
+| `mysql` | on | MySQL / MariaDB document adapter + client pool |
+| `sqlite` | on | SQLite document adapter (bundled client — no system library needed) |
+| `ssh` | on | `soli deploy` (drives the system `ssh` and `rsync`; no crate of its own) |
+| `office` | on | `Spreadsheet` — xlsx and csv (`calamine` reads, a built-in writer writes) |
+| `pdf` | on | `Pdf` — rendering, Factur-X, PAdES signatures (`soli-pdf`, CMS, X.509) |
+| `cloud` | on | `S3` and the `s3` attachment service (a built-in Signature V4 client; no extra crate) |
+| `mail` | on | `Mailer`, `Imap`, `Pop3` |
+| `lsp` | on | `soli lsp`, the language server (`tower-lsp-server`) |
+| `eui` | on | EUI components — `router_eui`, `eui_capabilities`, `eui_stats` and the `/_eui` session endpoint (`eui-proto`, `blake3`, `ring`) |
+| `sql` | off | Alias for `postgres` + `mysql` + `sqlite` |
+| `solidb-driver` | on | Native SoliDB TCP driver (MessagePack over TCP, one connection per worker). Compiled in and used by default; `SOLI_DB_DRIVER=0` keeps a server on HTTP |
+| `native` | on | [Native kernels](native-kernels.md): typed numeric functions compiled to machine code (Cranelift). Off, every function runs on the interpreter or the VM |
+| `eui-desktop` | off | `soli desktop build --eui` — the native EUI window (`eui-client`, winit, wgpu) |
+| `full` | off | Alias for the default set (it used to add `solidb-driver`, which is now in it) |
+
+SoliDB (HTTP) and the rest of the runtime always stay linked. A SoliDB-only install without PASETO or SQL clients:
+
+```bash
+cargo install --path . --locked --no-default-features \
+  --features embedding,llm,codegraph
+```
+
+Postgres only (no MySQL or SQLite client, no PASETO):
+
+```bash
+cargo install --path . --locked --no-default-features \
+  --features embedding,llm,codegraph,postgres
+```
+
+SQLite only — the client is compiled in, so the host needs no `libsqlite3`:
+
+```bash
+cargo install --path . --locked --no-default-features \
+  --features embedding,llm,codegraph,sqlite
+```
+
+A packaged application is the case these six exist for. `soli desktop
+build` embeds the runtime it was built from, so what an application never
+calls is weight every copy of it carries. Measured on 2026-09-08, x86-64
+Linux, release with LTO, stripped, the runtime plus the EUI window
+(`--features eui-desktop`):
+
+| Build | Binary |
+|---|---:|
+| Default feature set | 78 MB |
+| `--no-default-features --features eui-desktop`, before these six existed | 61 MB |
+| the same today | **46 MB** |
+
+The six are worth 15 MB of that, `ssh` alone about 2 (it links a vendored
+OpenSSL). What remains is the interpreter itself — 10 MB of machine code
+before any dependency — the HTTP stack the app's own server runs on, and
+the window: wgpu, its shader translator, text shaping and the
+accessibility bridge.
+
+```bash
+# An offline desktop application: the interpreter, its server, the window.
+cargo build --release --no-default-features --features eui-desktop
+# …with a local SQLite database:
+cargo build --release --no-default-features --features eui-desktop,sqlite
+```
+
+A class whose feature is off is simply not registered, so calling it is an
+undefined-variable error rather than a missing symbol; `soli deploy` and
+`soli lsp` say which feature they were built without and exit non-zero.
+
+If the binary was built without an adapter and you set `SOLI_DB_ADAPTER=postgres`
+(or a `database.toml` entry for it), boot fails with a rebuild hint rather than a
+missing symbol. The same applies to `Paseto.*` — the class is simply not registered
+when the `paseto` feature is off.
+
+The boot process also builds one extra interpreter to register the shared
+route/model/controller/template registries before workers start; it is now
+reclaimed immediately after boot rather than parked for the process lifetime.
+
+## Response compression
+
+`soli serve` can gzip what the application answers, the way `Rack::Deflater`
+does in a Rails app — and it remembers what it compressed, so a page served
+again is not deflated again. **Off by default.**
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_COMPRESS` | `gzip` (or `1`/`true`/`on`/`yes`) turns compression on. | off |
+| `SOLI_COMPRESS_LEVEL` | zlib level, `1`–`9` (out-of-range values are clamped). | `6` |
+| `SOLI_COMPRESS_MIN_BYTES` | Bodies smaller than this are sent as they are. | `1024` |
+| `SOLI_COMPRESS_CACHE_MB` | Size of the cache of compressed bodies, shared by the workers (originals kept alive included), least recently used out. `0` compresses every time. A body over a quarter of it is compressed but not kept. | `64` |
+
+What is compressed: a reply to a client whose `Accept-Encoding` takes gzip
+(q-values honoured, `*` included), with a body of at least
+`SOLI_COMPRESS_MIN_BYTES`, a text-like type (`text/*` except
+`text/event-stream`, JSON, JavaScript, XML, `*+json`, `*+xml`, SVG, wasm, icons,
+TrueType/OpenType), no `Content-Encoding` yet and no `Cache-Control:
+no-transform`. Never a `HEAD`, a 1xx, 204, 206 or 304, a streamed response or a
+SoliDB blob.
+
+A compressed reply carries `Content-Encoding: gzip` and the compressed length,
+and a strong `ETag` becomes weak (`W/"…"`; `If-None-Match` matches either form).
+Every compressible reply — gzipped or not, 304s included — carries `Vary:
+Accept-Encoding`, merged into a `Vary` the app already sets, so a shared cache
+keeps the two representations apart. Compression runs on the async side after
+the conditional-GET check, so it never holds a worker, and a compression error
+sends the body uncompressed.
+
+**When to turn it on.** When nothing in front of the app compresses, or when the
+app's pages repeat: a page a worker keeps is the same buffer from one request to
+the next, and the cache serves it without compressing again — something a front
+server, which sees each response for the first time, cannot do. On a 420 KB page
+this took a Campfire port from about 23,800 to 37,900 req/s; a reply that never
+repeats is compressed each time and costs a little throughput. Behind Soli Proxy
+with its own compression on, the proxy passes an already-encoded response
+through.
+
+**BREACH.** Compressing a page that reflects request input next to a secret
+(a CSRF token, say) lets an attacker who can make the victim send many requests
+guess the secret from the compressed sizes. That is why it is off by default.
+Soli's CSRF token is per session and embedded as is (not masked per request),
+so a page with a form that also echoes request input — a search box showing the
+query — is exposed. Check your pages before enabling it.
+
+## Hardening
+
+These knobs control how the request edge handles untrusted input. See the
+[Server Hardening](/docs/builtins/hardening) page for the full story.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_TRUST_PROXY` | Honors `X-Forwarded-Proto` / `X-Forwarded-Host` / `X-Forwarded-For` when set to `1`, `true`, or `yes`. Only enable when the deployment terminates these headers at a trusted proxy hop — on a directly-exposed app, any client can spoof them, which downgrades the CSRF and origin checks, flips the cookie `Secure` flag, aims `*_url` helpers at a phishing host, and hands every request a fresh identity so per-IP rate limits never trip. | `false` |
+| `SOLI_TRUSTED_PROXIES` | Comma-separated IPs or CIDR blocks (`10.0.0.0/8,127.0.0.1,::1`) whose requests may carry `X-Forwarded-*`. With this set, a client that reaches the app directly is not trusted even while `SOLI_TRUST_PROXY` is on. Unset, every peer is trusted when the flag is on. | unset |
+| `SOLI_FORCE_SECURE_COOKIES` | Set to `1`/`true`/`yes` to add `Secure` to **every** cookie the process emits — the framework's session cookie *and* anything the app sets through `set_cookie` — regardless of detected scheme. Use when the deployment is always on TLS but the proxy doesn't forward `X-Forwarded-Proto: https` (or `enable_trust_proxy()` isn't on). Equivalent runtime call: `enable_force_secure_cookies()`. | `false` |
+| `SOLI_MAX_BODY_SIZE` | Maximum buffered request body, in bytes. Requests over the cap return `413 Payload Too Large`. | `8388608` (8 MiB) |
+| `SOLI_DISABLE_CSRF` | Disables the same-origin CSRF check entirely when set to `true`. For API-only deployments where no cookie session is in play. Per-route opt-out via `skip_csrf("/path")` in `config/routes.sl` is preferred — see [Routing → CSRF Protection](/docs/routing#csrf-protection). Read once per process; changing it needs a restart. | unset |
+| `SOLI_CSRF_TOKENS` | Set to `require` to make per-form CSRF tokens mandatory for browser form posts (urlencoded/multipart) — a form post without a valid token returns 403. Tokens are always *verified when present* regardless of this setting. `soli new` writes `SOLI_CSRF_TOKENS=require` into `.env`; the runtime default remains unset for existing apps. The built-in jobs, errors, slow-queries and mobile pages (`/__soli/jobs`, `/__soli/errors`, `/__soli/slow_queries`, `/__soli/mobile`) are exempt from the requirement — they authenticate with Basic auth, not a cookie session, so they have no session token to embed — but keep the Origin/Referer gate. See [Forms & CSRF](/docs/core-concepts/forms). Read once per process; changing it needs a restart. | unset (new apps: `require`) |
+| `SOLI_HTTP_MAX_RESPONSE_BYTES` | Maximum bytes Soli will buffer from a single outbound HTTP response (`HTTP.*`, `SOAP.*`). A malicious or compromised upstream returning a multi-GB body would otherwise OOM the worker. | `52428800` (50 MiB) |
+| `SOLI_HTTP_MAX_STREAMS` | Most [`HTTP.stream_to`](builtins.md#httpstream_tomethod-url-options-body-to) streams running at once in a process; one more raises. | `256` |
+| `SOLI_HTTP_STREAM_EXIT_WAIT` | Most seconds a plain `soli script.sl` waits for its `HTTP.stream_to` streams before exiting. | unset (until they end) |
+| `SOLI_IMAGE_MAX_ALLOC_BYTES` | Maximum bytes the image decoder will allocate for a single image (`Image.*`, plan execution). Defends against decompression bombs — a 100 KB PNG declaring 65535×65535 pixels would otherwise allocate ~16 GB of RGBA pixels. | `268435456` (256 MiB) |
+| `SOLI_IMAGE_MAX_DIMENSION_PX` | Maximum pixel dimension on either axis for any decoded image. Images declaring more are rejected before allocation. | `16384` |
+| `SOLI_PARALLEL_MAX_ITEMS` | Maximum input list length accepted by `HTTP.get_all`, `HTTP.get_all_json`, `HTTP.parallel`, and `Image.process_all`. Calls with longer arrays are rejected before any thread is spawned. | `256` |
+| `SOLI_PARALLEL_MAX_CONCURRENCY` | Maximum OS threads alive at one time inside a parallel fan-out call. The runner consumes the input list in chunks of this size. | `16` |
+| `SOLI_MAX_UPLOAD_FILES` | Maximum number of file parts accepted per multipart request. A body packed with thousands of tiny parts would otherwise allocate a per-file Soli hash for each one and OOM the worker. | `32` |
+| `SOLI_MAX_INFLIGHT_BODY_BYTES` | Ceiling on the **sum** of request-body bytes buffered at once, across every connection. `SOLI_MAX_BODY_SIZE` bounds one request; this bounds the total, so a burst of large uploads is refused (`503` + `Retry-After`) rather than swapping the box. A body is charged against it **as its bytes arrive** — a 64 KiB reservation up front, doubled as the body grows, up to `SOLI_MAX_BODY_SIZE` — rather than reserving the full cap per request, so small bodies no longer crowd out the budget. `0` disables it. | `16 x SOLI_MAX_BODY_SIZE` |
+| `SOLI_BODY_BUDGET_PER_IP_BYTES` | Share of `SOLI_MAX_INFLIGHT_BODY_BYTES` one client may hold at once, so a single client cannot take the whole upload budget and turn every other upload away. Over it: the same `503 Server busy: too many uploads in flight` with `Retry-After: 1`. The client is the TCP peer, or the right-most `X-Forwarded-For` entry when trust proxy is on (the same key the rate limiter uses); IPv6 clients are counted per `/64`, IPv4-mapped IPv6 as IPv4. **Behind a proxy without trust proxy, every client is the proxy** and shares one share — about a quarter of total upload capacity by default: enable trust proxy, raise this, or set `0`. Values below 64 KiB make every request with a body a 503, since each upload claims a 64 KiB first slice. `0` disables it. | a quarter of `SOLI_MAX_INFLIGHT_BODY_BYTES` (at least one `SOLI_MAX_BODY_SIZE`, at most the global budget; `0` when the global budget is disabled) |
+| `SOLI_MAX_CONNECTIONS` | Maximum simultaneous TCP connections. Past the cap, new connections are closed immediately rather than queued: a client opening sockets and trickling bodies would otherwise exhaust file descriptors and memory without ever completing a request. `0` disables the cap. At startup `soli serve` raises its soft open-files limit to the hard limit the system allows (a soft 1,024 is common while the hard limit is far higher), so a server holding thousands of WebSockets does not run out of descriptors at the shell's default. If `accept` still runs out, the server waits 50 ms before retrying and logs `cannot accept connections` every 10 s, instead of spinning a core. | `20000` |
+| `SOLI_BODY_IDLE_TIMEOUT_SECS` | How long a request body may stall **between two frames** before the request is answered `408 Request Timeout`. `SOLI_BODY_READ_TIMEOUT_SECS` bounds the whole body; this bounds the silence, so a client that sends one byte and then nothing frees its connection and its memory reservation quickly. A body that breaks off with a transport error is answered `400` (it used to be `413`). | `10` |
+| `SOLI_BODY_READ_TIMEOUT_SECS` | How long a request body may take to arrive in full. The header read was already bounded; the body was not, so a byte every thirty seconds held a connection and its buffer indefinitely. | `60` |
+| `SOLI_MAX_PARAM_PAIRS` | Maximum `key=value` pairs parsed from a query string or urlencoded body, and plain (non-file) fields from a multipart body. Bounded only by the body cap, `a=&a=&…` produced millions of string pairs per request. Pairs past the cap are dropped. | `4096` |
+| `SOLI_HANDLER_TIMEOUT_SECS` | Wall-clock budget for executing one request handler. A runaway loop used to hold a worker forever, since the 504 the client receives does not stop the handler. Checked on loop iterations, statements, calls (recursion included), each element a block iterator hands its block (`n.times`, `upto`, `each`, …) and each comprehension element, on both engines, so it costs nothing measurable. Once spent it stays spent for the rest of the request — a `rescue` cannot keep the handler running — and the request answers with the error rather than being run again on the interpreter (before 2.29.4, an action, hook or middleware that timed out on the VM was re-run there and kept on the interpreter for that worker). `0` disables it. | `30` |
+| `SOLI_WORKER_STACK_MB` | Stack size for threads that run Soli code. The interpreter recurses on the native stack and its 256-frame budget does not fit the 2 MiB default, where an overflow aborts the whole process instead of failing one request. Virtual address space, committed only as used. | `64` |
+| `SOLI_MAX_RANGE_LEN` | Maximum elements a single `range(a, b)` / `a..b` may materialise. Both collect eagerly, so a request-supplied bound could ask the allocator for gigabytes — and an allocation failure aborts the process rather than the request. A `for` loop or a comprehension over `a..b`, in parentheses or not, counts through it without building it, so the length of the range is not limited there; a comprehension's result is, since it is built: `[f(i) for i in 0..n]` is refused once it would hold more than this many elements (a filter that keeps fewer is not). | `16777216` |
+| `SOLI_MAX_STRING_ALLOC_BYTES` | Maximum size of a string built by `"x" * n`. Same reasoning as `SOLI_MAX_RANGE_LEN`; a negative count is refused outright. | `67108864` (64 MiB) |
+| `SOLI_MAX_PAGE_SIZE` | Ceiling on `paginate({"per": n})` and vector-search `top_k`. `per` comes straight from request params, and an unbounded page loads the whole collection into one request. | `1000` |
+| `SOLI_MAX_XML_BYTES` | Largest XML input `Xml.parse` and `Xml.parse_file` accept, in bytes; also caps one match of `Xml.each` / `Xml.reader` (and one text run or attribute value in a streamed file, checked before it is buffered) and the output of `to_xml`. A per-call `max_bytes` option can only lower it. See [XML](/docs/builtins/xml). | `67108864` (64 MiB) |
+| `SOLI_MAX_XML_DEPTH` | Deepest element nesting `Xml.parse`, `Xml.parse_file`, `Xml.each` and `Xml.reader` accept; the parser never goes past 10,000 whatever the value. `SOAP.parse` / `SOAP.call` use 64 (or this, when lower); the c14n functions a fixed 256. | `256` |
+| `SOLI_MAX_XML_NODES` | Most nodes one XML tree may hold — parsed, built and removed nodes alike — and one streamed match. | `1000000` |
+| `SOLI_MAX_XML_ATTRS` | Most attributes on one XML element, parsed or built. | `1024` |
+| `SOLI_MAX_XPATH_VISITS` | Most node visits one `find` / `find_all` / `xpath` / `at_xpath` evaluation may make before it raises. | `10000000` |
+| `SOLI_RATE_LIMIT_IPV6_PREFIX` | Prefix length IPv6 clients are aggregated to for per-IP rate limiting. A residential allocation is a 64-bit prefix, so keying on the full address let one host take a fresh bucket per request and never trip the login throttle. Use 56 or 48 to aggregate a whole site. | `64` |
+| `SOLI_METRICS_TOKEN` | Bearer token required to read `/_metrics`. Unset, the endpoint is limited to loopback and private-range peers instead of being world-readable — **and refused (404) outright when the request carries `X-Forwarded-For`, `X-Real-IP` or `Forwarded`, or `trust_proxy` is on**, because behind a reverse proxy every peer looks local. A deployment behind a proxy must set the token. | unset |
+| `SOLI_H2_KEEPALIVE_SECS` | Interval between HTTP/2 (h2c) keep-alive `PING`s. A connection that does not acknowledge one within 20 seconds is closed. | `30` |
+| `SOLI_CONN_IDLE_TIMEOUT_SECS` | An HTTP/2 connection with no activity for this long is closed, so idle multiplexed connections do not accumulate. | `60` |
+| `SOLI_WS_MAX_CONNECTIONS` | Maximum simultaneous WebSocket connections across all routes. Each holds a task and a channel; the registry was unbounded. | `10000` |
+| `SOLI_WS_MAX_CONNECTIONS_PER_IP` | Maximum simultaneous WebSocket connections from one client address — behind a trusted proxy (`enable_trust_proxy()`), the forwarded client (`SOLI_CLIENT_IP_HEADER`, else the right-most `X-Forwarded-For`), not the proxy. `0` disables the per-IP cap. | `64` |
+| `SOLI_WS_MAX_MESSAGES_PER_SEC` | Sustained inbound frames per second allowed on one socket before it is closed, so a single connection cannot monopolise the shared realtime queue. `0` disables it. | `100` |
+| `SOLI_WS_MESSAGE_BURST` | Burst allowance on top of `SOLI_WS_MAX_MESSAGES_PER_SEC`. | `200` |
+| `SOLI_WS_ENQUEUE_TIMEOUT_SECS` | How long a WebSocket frame waits for room in the realtime worker queue before the socket is closed with 1013. | `5` |
+| `SOLI_IMAP_MAX_LITERAL_BYTES` | Maximum IMAP literal (`{N}`) accepted from a server. The size is server-supplied and allocated up front. | `33554432` (32 MiB) |
+| `SOLI_POP3_MAX_RESPONSE_BYTES` | Maximum size of a dot-terminated POP3 multiline response, which has no declared length. | `33554432` (32 MiB) |
+
+## Database
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLIDB_HOST` | SoliDB server URL. An explicit `http://` / `https://` prefix is preserved. When the scheme is omitted, the host defaults to `https://` for remote DBs and `http://` for loopback (`localhost`, `127.0.0.1`, `::1`) so the dev loop stays plaintext while remote DBs are TLS by default. Read once per process; changing it needs a restart. | `http://localhost:6745` |
+| `SOLIDB_DATABASE` | Database name used by models, migrations, uploads, and jobs fallback. | `default` |
+| `SOLIDB_API_KEY` | API-key auth for SoliDB where supported. | unset |
+| `SOLIDB_USERNAME` | Username for SolidB login/basic auth. | unset |
+| `SOLIDB_PASSWORD` | Password paired with `SOLIDB_USERNAME`. | unset |
+| `SOLI_DB_DRIVER` | `0` (or `false`, `off`, `no`) keeps the model layer on SoliDB's HTTP API. Otherwise models reach SoliDB over its native MessagePack driver (one TCP connection per worker, on the `SOLIDB_HOST` port): document CRUD and queries, with plain reads decoded straight into Soli values, the same credentials, and errors worded as HTTP words them (`HTTP 404`, a 409 duplicate key as `has already been taken`). Transactions and blobs stay on HTTP. A driver that cannot connect falls back to HTTP for that worker (one line on stderr); a `https://` host uses HTTP, never a downgrade. Read once per process. | driver |
+| `SOLI_DB_DRIVER_QUERY` | `0` keeps queries on HTTP while the driver carries document CRUD. | queries on the driver |
+
+## Sessions
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_SESSION_DRIVER` | Session backend: `in_memory`, `cookie`, `disk`, `solidb`, or `solikv`. | `in_memory` |
+| `SOLI_SESSION_SECRET` | Secret for the `cookie` session driver (32+ characters — e.g. `openssl rand -hex 32`). The AES-256-GCM key that seals client-side sessions is HKDF-derived from it; rotating it invalidates every outstanding session. Required when the driver is `cookie`. | unset |
+| `SOLI_SESSION_PATH` | Directory for disk-backed session files. | `./sessions` |
+| `SOLI_SESSION_TTL` | Session timeout in seconds. | `86400` |
+| `SOLI_SESSION_MAX_LIFETIME` | **Absolute** lifetime of a `cookie`-driver session, in seconds, counted from when it was issued however active it stays. `session_regenerate()` restarts it; a cookie issued before this setting existed counts from its `iat`. `0` disables it. | `2592000` (30 days) |
+| `SOLI_SESSION_MAX_IN_MEMORY` | Cap on sessions held by the `in_memory` driver. Past it the least-recently-used sessions are evicted — those users are logged out. Expired sessions are swept every 1000 creations or 30 seconds. `0` means unlimited. | `100000` |
+| `SOLI_SESSION_SAMESITE` | `SameSite` attribute on the session cookie: `Lax`, `Strict`, or `None`. `Strict` blocks the cookie on any cross-site navigation; `None` is intended for cross-site embeds and **automatically pairs with `Secure`** — Soli forces the flag on regardless of the detected request scheme so browsers don't silently drop the cookie. Unknown values fall back to `Lax`. | `Lax` |
+| `SOLI_SESSION_HOST_PREFIX` | Set to `1`/`true`/`yes` to emit the cookie under the `__Host-` prefix (`__Host-session_id`). The browser only accepts `__Host-` cookies that are `Secure`, have `Path=/`, and carry no `Domain` attribute, which prevents subdomain takeover from setting an attacker-controlled session cookie. The prefix is only applied when `Secure` is also active (i.e. behind HTTPS); otherwise the plain `session_id` name is used. | unset |
+| `SOLI_SOLIDB_HOST` | SolidB host for the `solidb` session driver. Must be `https://` or a loopback (`localhost`, `127.0.0.1`, `::1`) — plaintext HTTP to a remote SolidB is rejected. | driver default |
+| `SOLI_SOLIDB_DATABASE` | SolidB database for sessions. | driver default |
+| `SOLI_SOLIDB_COLLECTION` | SolidB collection for sessions. | driver default |
+| `SOLI_SOLIDB_API_KEY` | API key the `solidb` session driver presents to SolidB. Required for non-loopback hosts. Falls back to `SOLIDB_API_KEY` (the same key the Model layer reads) when unset. | unset |
+| `SOLI_SOLIDB_USERNAME` | Basic-auth username for the `solidb` session driver (paired with `SOLI_SOLIDB_PASSWORD`). Falls back to `SOLIDB_USERNAME`. | unset |
+| `SOLI_SOLIDB_PASSWORD` | Basic-auth password for the `solidb` session driver. Falls back to `SOLIDB_PASSWORD`. | unset |
+| `SOLI_SESSION_ALLOW_INSECURE_HTTP` | Set to `1`/`true`/`yes` to allow plaintext HTTP and missing auth on non-loopback session hosts. Only when the network path is operator-trusted. | unset |
+| `SOLI_SOLIKV_HOST` | SoliKV host for the `solikv` session driver. Must be a loopback (`localhost`, `127.0.0.1`, `::1`) — SoliKV uses plaintext RESP/TCP and the `AUTH` token transits in the clear, so non-loopback hosts are rejected. | `localhost` |
+| `SOLI_SOLIKV_PORT` | SoliKV port for sessions. | `6380` |
+| `SOLI_SOLIKV_TOKEN` | SoliKV auth token for sessions. Sent as a Redis-style `AUTH` command — same loopback-only constraint as the host. | unset |
+
+## Jobs
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_JOBS_POLL_MS` | How often the job poller looks for due work, in milliseconds. Under `--dev` the poller ticks every `5000` ms instead, so several dev apps don't hammer a shared database with idle claims; setting this variable overrides that too. | `1000` (`5000` in `--dev`) |
+| `SOLI_JOBS_DEFAULT_QUEUE` | Queue used when no queue is specified. | `default` |
+| `SOLI_JOBS_LEASE_SECS` | Lease length for a claimed job. A `running` job whose lease expires is reclaimed by another poller — raise this for long jobs. | `60` |
+| `SOLI_JOBS_MAX_RETRIES` | Default retry budget per job; a job past it becomes `dead`. | `3` |
+| `SOLI_JOBS_RETENTION_SECS` | How long completed job rows are kept before pruning. | `604800` |
+| `SOLI_JOB_WORKERS` | Worker threads that run job code. Each worker is a full interpreter, so the default is conservative; raise it for higher throughput, or set `0` to disable the job engine in this process and run [`soli jobs`](jobs.md#standalone-worker) separately. | `1` |
+| `SOLI_JOB_VIEW_HELPERS` | Whether background-job interpreters load view helpers (which include an app's i18n locale tables — often the largest per-interpreter cost). Set `0` to skip them when no job renders a helper-using template, dropping that memory from every job interpreter. | enabled |
+| `SOLI_JOBS_USER` | HTTP Basic username for the production `/__soli/jobs` dashboard. Must be paired with `SOLI_JOBS_PASSWORD`. Unset (and no token, and no `SOLI_ADMIN_*`) means the route 404s outside `--dev`. | unset |
+| `SOLI_JOBS_PASSWORD` | HTTP Basic password for `/__soli/jobs`. | unset |
+| `SOLI_JOBS_TOKEN` | Optional bearer token for `/__soli/jobs` (`Authorization: Bearer …`). Accepted alongside Basic when both are set. | unset |
+| `SOLI_USAGE` | App usage counts (requests per route pattern, status classes, latency) for the [`/__soli/`](observability.md#overview-__soli) overview, kept hourly in `_soli_usage` when the app has a database configured (in memory otherwise). `off` stops counting; `on` forces it on under `APP_ENV=test`, where it is otherwise off. | on |
+| `SOLI_OVERVIEW_USER` / `SOLI_OVERVIEW_PASSWORD` / `SOLI_OVERVIEW_TOKEN` | Credentials for the usage and engine rows of the production `/__soli/` overview. The overview also opens with any other operator page's credentials, showing only that page's source. With none of them and no `SOLI_ADMIN_*`, it 404s outside `--dev`. | unset |
+| `SOLI_ERRORS` | Error tracking for [`/__soli/errors`](observability.md#error-tracking-__solierrors). `off` stops recording; `on` forces it on under `APP_ENV=test`, where it is otherwise off. | on |
+| `SOLI_ERRORS_USER` | HTTP Basic username for the production `/__soli/errors` page. Must be paired with `SOLI_ERRORS_PASSWORD`. With no errors credentials and no `SOLI_ADMIN_*`, the route 404s outside `--dev`. | unset |
+| `SOLI_ERRORS_PASSWORD` | HTTP Basic password for `/__soli/errors`. | unset |
+| `SOLI_ERRORS_TOKEN` | Optional bearer token for `/__soli/errors`. | unset |
+| `SOLI_QUERY_STATS` | Per-shape totals of every query (calls, time, most runs in one request) for the default view of [`/__soli/slow_queries`](observability.md#query-time-and-n1-__solislow_queries). `off` stops counting; `on` forces it on under `APP_ENV=test`, where it is otherwise off. | on |
+| `SOLI_SLOW_QUERIES` | Slow-query tracking for [`/__soli/slow_queries`](observability.md#slow-queries-__solislow_queries). `off` stops recording; `on` forces it on under `APP_ENV=test`, where it is otherwise off. | on |
+| `SOLI_SLOW_QUERY_MS` | A query taking this many milliseconds or more is recorded as slow. Read once per process. | `200` |
+| `SOLI_SLOW_QUERY_BINDS` | `off` stores slow queries without their bind values. | on |
+| `SOLI_SLOW_QUERIES_USER` / `SOLI_SLOW_QUERIES_PASSWORD` / `SOLI_SLOW_QUERIES_TOKEN` | Credentials for the production `/__soli/slow_queries` page, like `SOLI_ERRORS_*`. With none and no `SOLI_ADMIN_*`, the route 404s outside `--dev`. | unset |
+| `SOLI_SPAM` | Recording of the posts `spam_check(req)` sees, and of its model, for [`/__soli/spam`](security/spam.md#the-quarantine-__solispam). `off` stops recording (the checks still run); `on` forces it on under `APP_ENV=test`, where it is otherwise off. | on |
+| `SOLI_SPAM_USER` / `SOLI_SPAM_PASSWORD` / `SOLI_SPAM_TOKEN` | Credentials for the production `/__soli/spam` page, like `SOLI_ERRORS_*`. With none and no `SOLI_ADMIN_*`, the route 404s outside `--dev`. | unset |
+| `SOLI_CLIENT_IP_HEADER` | With trust proxy on, a header holding the client address on its own (`cf-connecting-ip`, `x-real-ip`), read before `X-Forwarded-For` by `client_ip(req)`, the rate limiter and the per-client body budget. Ignored without trust proxy. | unset |
+| `SOLI_MOBILE_USER` / `SOLI_MOBILE_PASSWORD` / `SOLI_MOBILE_TOKEN` | Credentials for [`/__soli/mobile`](native/clients.md#distribute-__solimobile), where `soli mobile publish` uploads native builds. The token is also what the CLI sends (`SOLI_MOBILE_TOKEN` in its environment). With none and no `SOLI_ADMIN_*`, the page and its install links 404 outside `--dev`. | unset |
+| `SOLI_MOBILE_PATH` | Where `/__soli/mobile` stores builds. | `./storage/mobile` |
+| `SOLI_MOBILE_MAX_SIZE` | Upload cap for one build, in bytes; independent of `SOLI_MAX_BODY_SIZE`. | 536870912 (512 MiB) |
+| `SOLI_MOBILE_KEEP` | Builds kept per app (bundle id and platform); older ones are deleted with their files. | 20 |
+| `SOLI_MOBILE_PUBLIC_INSTALL` | `0` turns off the public install links (`/__soli/mobile/i/<token>`). | on |
+| `SOLI_ANDROID_KEYSTORE` | Release keystore for `soli mobile build android` (same as `--keystore`); its passwords come from `SOLI_ANDROID_KEYSTORE_PASSWORD`, `SOLI_ANDROID_KEY_PASSWORD` and `SOLI_ANDROID_KEY_ALIAS`. | unset (debug key) |
+| `SOLI_ADMIN_USER` / `SOLI_ADMIN_PASSWORD` / `SOLI_ADMIN_TOKEN` | One set of credentials accepted by every built-in operator page (`/__soli/`, `/__soli/jobs`, `/__soli/errors`, `/__soli/slow_queries`, `/__soli/spam`, `/__soli/mobile`), in addition to each page's own. | unset |
+| `SOLI_NOTIFY_WEBHOOKS` | Comma-separated URLs that receive [notifications](observability.md#notifications). Slack, Microsoft Teams, Discord, Google Chat and Campfire bot URLs get their own message format; any other URL gets the event as JSON. | unset |
+| `SOLI_NOTIFY_EMAILS` | Comma-separated addresses that receive notifications through the app's mailer (`SOLI_SMTP_*`). | unset |
+| `SOLI_NOTIFY_FROM` | Sender of notification emails. | `SOLI_SMTP_FROM` |
+| `SOLI_NOTIFY_EVENTS` | Which events are sent: any of `error.new`, `error.regressed`, `error.spike`, `slow_query.new`. | all four |
+| `SOLI_NOTIFY_THROTTLE` | At most one message per event and group within this window (`90s`, `15m`, `1h`). | `15m` |
+| `SOLI_NOTIFY_SPIKE` | `error.spike` rule, `<count>/<window>`; `off` disables it. | `50/5m` |
+| `SOLI_NOTIFY_SECRET` | Signs JSON webhook bodies: `X-Soli-Signature` is the hex HMAC-SHA256 of the body. | unset |
+| `SOLI_NOTIFY_URL` | Base URL for the links in notifications. | `https://` + first `SOLI_APP_HOSTS` |
+| `SOLI_NOTIFY_APP_NAME` | The app's name in notifications. | the app directory's name |
+
+## Cache And KV
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLIKV_RESP_HOST` | SoliKV RESP host used by KV/cache builtins. | `localhost` |
+| `SOLIKV_RESP_PORT` | SoliKV RESP port. | `6380` |
+| `SOLIKV_TOKEN` | SoliKV auth token. | unset |
+| `SOLI_KV_ALLOW_ADMIN` | Set to `1`/`true`/`yes` to lift the denylist on destructive/admin RESP commands (`FLUSHALL`, `FLUSHDB`, `KEYS`, `SCAN`, `CONFIG`, `DEBUG`, `SHUTDOWN`, `MONITOR`, `CLIENT`, `EVAL`, `SCRIPT`, etc.) reachable from `KV.cmd`, `KV.flushdb`, and `KV.keys`. Only set this on a trusted, non-user-facing process. | unset |
+
+## Event Streaming (ES)
+
+Read by the [`ES` class](builtins.md#es-class), per application; `ES.configure` overrides them at run time.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `ES_BROKER` | HTTP address of the es broker used by `ES`. | `http://127.0.0.1:9000` |
+| `ES_BINARY` | `host:port` of the broker's binary listener; set, `ES` produces and consumes over the binary protocol. | unset (HTTP only) |
+| `ES_AUTH` | Bearer token for a broker running with `--auth required`. | unset |
+| `ES_GZIP` | `1` to ask for gzip frames on the binary protocol. | off |
+| `ES_CA_FILE` | PEM file of the CA that signed the broker's certificate. | public roots |
+| `ES_TIMEOUT` | Seconds before an `ES` request gives up. | `30` |
+
+## S3
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `AWS_ACCESS_KEY_ID` | AWS-compatible access key. Alternative: `S3_ACCESS_KEY`. | required for S3 calls |
+| `AWS_SECRET_ACCESS_KEY` | AWS-compatible secret key. Alternative: `S3_SECRET_KEY`. | required for S3 calls |
+| `AWS_REGION` | AWS region. Alternative: `S3_REGION`. | `us-east-1` |
+| `S3_ACCESS_KEY` | S3-compatible access key fallback. | unset |
+| `S3_SECRET_KEY` | S3-compatible secret key fallback. | unset |
+| `S3_REGION` | S3-compatible region fallback. | `us-east-1` |
+| `S3_ENDPOINT` | Custom endpoint for MinIO or another S3-compatible service. | unset |
+
+## Script Engine
+
+`soli script.sl`, `soli -e "…"` and executables from `soli build tool.sl` run on the bytecode VM —
+the engine `soli serve` uses in production — unless the script needs the tree-walking interpreter.
+That is decided from the source before the first line runs. The interpreter takes a script that
+uses class reflection (`send`, `class_eval`, `instance_eval`, `methods`, or `respond_to?`, `inspect`,
+`to_s`, `to_string` on a class name), `method_missing`, model batch iteration
+(`find_each`, `in_batches`, `find_in_batches`), a model
+lifecycle callback (`before_save`, `after_create`, …), a state machine (`state_machine`,
+`before_transition`, `after_transition`) or `subscribe` with a block; one that reads a function
+with no required parameter without parentheses (`x = helper`, `print(helper)`: the interpreter
+calls it, the VM would hand over the function); and one the VM cannot compile. Those names count
+wherever they appear, even where the script defines one itself (a variable `methods`, a
+`def subscribe(topic)`), since the same name may be the builtin elsewhere in the script. A bare
+`clock`, which both engines call, stays on the VM. `soli test`, the REPL and `soli serve --dev`
+always use the interpreter. See [Running Soli Code](soli-language.md#running-soli-code).
+
+| Variable / flag | Purpose | Default |
+|-----------------|---------|---------|
+| `--tree` | Run the script on the tree-walking interpreter: `soli --tree script.sl`. | unset |
+| `--vm` | Run it on the VM with no fallback. A script that needs the interpreter stops with an error where the VM cannot go on (`Cannot access property 'send' on …`), and a lambda kept in a variable and read without `()` stays a function, as under `soli serve` (a zero-argument def read bare is called, as on the interpreter). | unset |
+| `SOLI_ENGINE` | `tree` (or `interpreter`), `vm` or `auto`: the engine `soli script.sl` and `soli -e` use when no flag is given. A flag wins; any other value means `auto`. An executable from `soli build` keeps the engine it was built with (`soli build tool.sl --tree` or `--vm`; `auto` by default) and ignores it. | `auto` |
+| `SOLI_ENGINE_LOG` | `1` prints to stderr which engine runs a script and why — `engine: vm`, `` engine: tree-walker — the script uses `class_eval` ``, `` engine: tree-walker — the script calls `helper` without parentheses `` — when the choice is automatic (a forced engine prints nothing). Under `soli serve` it logs each action or middleware demoted from the VM to the interpreter (see [Observability](observability.md)), and, once each, the views, partials, components and layouts the interpreter renders and the view helpers it runs, with the reason (see [Views](views.md#which-engine-renders-a-view)). | unset |
+| `SOLI_VM_VIEWS` | `0` / `off` renders every view on the tree-walking interpreter instead of compiling it to the VM (production only; `--dev` always uses the interpreter). See [Views](views.md#which-engine-renders-a-view). | on |
+| `SOLI_VM_VIEWS_CHECK` | A file path: each compiled view is also rendered on the interpreter, whose output is served, and every view whose two renders differ is appended to the file. A diagnostic; it doubles a render's cost. | unset |
+
+## Native Kernels
+
+Scripts (`soli script.sl`, `--tree`, `--vm`, `soli -e`, executables from `soli build tool.sl`) compile
+their typed numeric top-level functions to machine code when they load. See
+[Native Kernels](native-kernels.md).
+
+| Variable / flag | Purpose | Default |
+|-----------------|---------|---------|
+| `SOLI_NATIVE` | `0`, `off`, `false` or `no` turns native kernels off: every function runs on the tree-walker or the VM. | on |
+| `--no-native` | The same, as a CLI flag: `soli --no-native script.sl`. | unset |
+| `SOLI_NATIVE_LOG` | `1` prints to stderr which functions were compiled, which were refused and why, and the first decline of each kernel. `2` also prints each kernel's Cranelift IR. | `0` |
+
+## Deploy
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_DEPLOY_API_KEY` | API key required by `soli deploy` for proxy deployment. | required for deploy |
+
+## Test And Coverage Internals
+
+These are normally set by Soli tooling rather than by applications.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOLI_COVERAGE_ENABLED` | Enables the server-side coverage dump endpoint for test aggregation. The endpoint requires `SOLI_COVERAGE_TOKEN` to be set as well — without a matching `X-Coverage-Token` request header it returns 403. | unset |
+| `SOLI_COVERAGE_TOKEN` | Per-process secret gating `/__coverage__`. The test runner mints a fresh random token per run and sends it as `X-Coverage-Token` when scraping; without this token the endpoint refuses every caller, even when `SOLI_COVERAGE_ENABLED` is set. | required when `SOLI_COVERAGE_ENABLED` is set |
+
+## Runtime Overrides
+
+The hardening knobs above also have function equivalents that override the
+env-driven default at runtime. Useful when a single action needs a different
+limit, or when test setup needs to flip the gate without re-reading the
+environment.
+
+Soli loads `config/application.sl` once at boot, before `config/routes.sl`,
+which makes it the natural place for app-wide startup config:
+
+```soli
+# config/application.sl
+
+# Trust X-Forwarded-* only behind a trusted proxy. Off by default, and
+# generated apps ship with this line commented out — on a directly-exposed
+# app any client can forge those headers. Pair it with SOLI_TRUSTED_PROXIES
+# to name the hops whose forwarded headers are honoured.
+enable_trust_proxy()
+
+# Always emit Secure session cookies — appropriate when the deployment
+# is always on TLS but the proxy doesn't forward X-Forwarded-Proto.
+enable_force_secure_cookies()
+
+# Raise the default 8 MiB body cap when an app needs larger uploads.
+set_max_body_size(32 * 1024 * 1024)
+```

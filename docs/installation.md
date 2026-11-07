@@ -1,0 +1,266 @@
+# Installation
+
+## Prerequisites
+
+None. Soli is a single binary with no Node.js, npm, OpenSSL or database to install first. The quick installer below only needs `curl`.
+
+## Install SoliLang
+
+### Quick Install (Recommended)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/solisoft/soli_lang/main/install.sh | sh
+```
+
+This detects your OS and architecture, downloads the latest release binary, and installs it to `~/.local/bin`.
+
+It says which versions it saw: the `soli` already in the install directory, the one it downloaded, and the one it installed, read from each binary with `soli --version`. When the shell would run a different `soli` first on your `PATH`, it names that copy and its version, since that is the one your commands will reach. If GitHub's API does not answer (it is rate-limited without a token), it downloads the latest release through GitHub's `latest/download` link instead, and the version still comes from the binary.
+
+When run as **root** (e.g. through `sudo`, or inside a Docker image build), the installer
+automatically targets `/usr/local/bin` so every user on the machine can run `soli` — no
+`--system` flag needed:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/solisoft/soli_lang/main/install.sh | sudo sh
+```
+
+A global install also removes any stale per-user copy (e.g. `/root/.local/bin/soli`) left by
+older installs, so PATH can't shadow the new binary with an outdated one.
+
+For system-wide installation as a non-root user (the script will use `sudo` for the copy step):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/solisoft/soli_lang/main/install.sh | sh -s -- --system
+```
+
+To force a per-user install even when running as root, pass `--user`:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/solisoft/soli_lang/main/install.sh | sudo sh -s -- --user
+```
+
+### Updating
+
+`soli update` replaces the binary in place, wherever it was installed. If Soli lives in a
+root-owned directory (such as `/usr/local/bin`), run the update with `sudo`:
+
+```bash
+sudo soli update
+```
+
+Running `soli update` without the needed permissions prints a hint telling you to re-run with
+`sudo`.
+
+### Via Cargo
+
+```bash
+cargo install solilang
+```
+
+### From Source
+
+```bash
+# Clone the repository
+git clone https://github.com/solisoft/soli_lang.git
+cd soli_lang
+
+# Build the project (full default features)
+cargo build --release
+
+# Install globally — always use --locked so Cargo.lock is honoured
+cargo install --path . --locked
+```
+
+The default `release` profile builds on every core with ThinLTO. The published
+binaries use the `dist` profile instead. It uses fat LTO and a single codegen
+unit, so it runs a few percent faster but takes several minutes longer to build
+on one core. Use it for a production or benchmark build:
+
+```bash
+cargo install --path . --locked --profile dist   # binary in target/dist/
+cargo install solilang --locked --profile dist   # same, from crates.io
+```
+
+To shrink the binary (and baseline RSS) when you only need SoliDB, drop optional
+subsystems at build time — see [Configuration → Slim binary](configuration.md#slim-binary-cargo-features):
+
+```bash
+# SoliDB-only: no Postgres/MySQL/SQLite clients, no PASETO
+cargo install --path . --locked --no-default-features \
+  --features embedding,llm,codegraph
+```
+
+## Docker
+
+Soli ships an official container image on the GitHub Container Registry, rebuilt
+and published for every release.
+
+```bash
+# Pull the latest release (or pin a version, e.g. :v1.13.5)
+docker pull ghcr.io/solisoft/soli_lang:latest
+```
+
+The image's entrypoint **is** the `soli` binary, so any `soli` subcommand works
+as the container command:
+
+```bash
+docker run --rm ghcr.io/solisoft/soli_lang:latest --version
+```
+
+### Run a Soli app in a container
+
+Mount your project into the container and publish the server port. The server
+binds `0.0.0.0` by default, so the published port is reachable from the host:
+
+```bash
+docker run --rm -p 5011:5011 \
+  -v "$(pwd):/app" -w /app \
+  ghcr.io/solisoft/soli_lang:latest serve . --port 5011
+```
+
+Your app is now available at `http://localhost:5011`.
+
+### Build the image yourself
+
+The repository ships a multi-stage `Dockerfile` that compiles a release binary
+and copies it into a slim Debian runtime:
+
+```bash
+git clone https://github.com/solisoft/soli_lang.git
+cd soli_lang
+docker build -t soli .
+docker run --rm soli --version
+```
+
+## Create a New MVC Project
+
+```bash
+soli new my_app
+cd my_app
+soli serve . --dev
+```
+
+There is no `npm install` step and no `package.json`: `soli new` compiles
+`app/assets/css/application.css` itself, with the same checksummed standalone
+Tailwind binary the dev server uses, and commits the result. Node is not
+required to build or run a Soli app.
+
+## Project Setup
+
+### 1. Configure Routes
+
+Edit `config/routes.sl`:
+
+```soli
+get("/", "home#index");
+get("/about", "home#about");
+post("/contact", "home#contact");
+```
+
+### 2. Create Controllers
+
+Create controllers in `app/controllers/`:
+
+```soli
+def index
+  return render("home/index", {
+    "title": "Welcome"
+  })
+end
+```
+
+### 3. Add Views
+
+Create templates in `app/views/home/`:
+
+```erb
+<h1><%= title %></h1>
+<p>Welcome to my app!</p>
+```
+
+## Running in Development
+
+```bash
+soli serve . --dev
+```
+
+In `--dev` mode the server compiles your Tailwind CSS for you: it scans
+`app/assets/css/*.css`, detects whether the project is **Tailwind v3 or v4**
+(from your CSS directives, and from `package.json` if you keep one), and
+writes the result to `public/css/`. It recompiles whenever views, asset CSS,
+controllers, or helpers change, so new utility classes show up on the next
+reload. On startup it compiles only when the CSS is out of date — when
+anything under `app/` or `config/`, a top-level file such as `soli.toml`, or a
+path named by an `@source` directive is newer than `public/css/` — and
+otherwise prints `Tailwind CSS up to date`. Delete `public/css/` to force a
+compile.
+
+Which Tailwind binary it uses:
+
+- a local `node_modules/.bin/tailwindcss` if present — `soli new` does not
+  create one, but a project that keeps its own npm toolchain has deliberately
+  installed that CLI, so its version wins; otherwise
+- a SHA-256-pinned standalone CLI downloaded to `~/.soli/bin/` (v4.3.1 for
+  v4 projects, v3.4.17 for legacy v3 projects).
+
+### Pinning a Tailwind version
+
+To compile with a version other than the built-in pin, name it in `soli.toml`:
+
+```toml
+[assets]
+tailwind_version = "4.1.5"
+# Optional: pin the exact bytes. Without it, the download is verified against
+# the release's own sha256sums.txt, which proves you received what the release
+# lists — not that the release is what someone vetted.
+tailwind_sha256 = "…64 hex characters…"
+```
+
+`SOLI_TAILWIND_VERSION` and `SOLI_TAILWIND_SHA256` override the file, so CI and
+one-off upgrade checks need no commit. A project-chosen version is cached under
+its own name, so two projects on different Tailwinds do not fight over one file.
+If no checksum can be obtained, nothing is installed — an unverified binary is
+never executed.
+
+Because the dev server handles this, a separate Tailwind watcher is optional. If
+you prefer the official `--watch` incremental mode, install the CLI yourself at
+`node_modules/.bin/tailwindcss` and run it alongside `soli serve`.
+
+## Building for Production
+
+```bash
+# CSS is compiled by `soli serve . --dev`; commit public/css/ so the
+# deployed app ships it. To rebuild explicitly, touch a file under
+# app/assets/css/ and start the dev server once.
+
+# Build the shipped (fat-LTO) binary: target/dist/soli
+cargo build --profile dist --locked
+```
+
+## Verifying Installation
+
+Create a test file:
+
+```soli
+# test.sl
+println("Hello, SoliLang!");
+```
+
+Run it:
+
+```bash
+soli test.sl
+```
+
+You should see: `Hello, SoliLang!`
+
+## Serving a Folder
+
+`soli serve` does not need a project. Point it at any directory and it serves that directory as a
+website — files off disk, `.md` rendered as pages, and a generated index for every folder:
+
+```bash
+soli serve ./notes --dev
+```
+
+See [Static & Markdown Server](static-server.md) for the full behaviour.

@@ -1,0 +1,598 @@
+# Tests
+
+This directory holds **BDD-style specs** that run with `soli test`. Every
+behavior worth shipping has a spec; the coverage gate is non-negotiable.
+
+File pattern: `*_spec.sl`. Controller specs run as full end-to-end HTTP
+requests against a real worker; model and helper specs exercise objects
+directly.
+
+## What a spec must prove
+
+A spec is evidence that the code does the right thing **and refuses the wrong
+one**. A suite of happy paths passes just as well against an app that accepts
+everything, lets anyone in and never checks an id, so it proves next to nothing.
+For every behavior, write the cases that must fail next to the one that must
+succeed:
+
+- **Invalid input** — missing, blank, wrong type, too long, out of range, a
+  value already taken. Assert the refusal (`422`), *which* field it names, and
+  that nothing was written.
+- **Someone who may not do it** — a guest, another user's record, a role
+  without the right. Assert `401`/`403`/the redirect, and that the data did not
+  change.
+- **Something that does not exist** — an unknown id answers `404`, not `500`.
+- **Errors raised on purpose** — `assert_raises("fragment") do … end`: the
+  error *and* its message, not just "something raised".
+- **Boundaries** — 0, 1, the limit and one past it, an empty list, the last
+  page.
+- **What a failure leaves behind** — after a refused create, update or
+  payment, the count and the stored record are what they were before.
+
+Assert the outcome, not only the status code: the stored record, the count,
+the field marked in error, the redirect target. A test that would still pass
+if the action did nothing — or did the opposite — is not a test. Coverage does
+not catch this: a happy path executes the line of a `return … if invalid`
+guard without ever taking it. Before calling a spec done, break the code it
+protects (drop the validation, the permission check) and watch it fail.
+
+```soli
+describe("POST /posts") do
+  before_each() do
+    as_guest()
+  end
+
+  test("creates a post from valid data") do
+    response = post("/posts", { "title": "Hello", "body": "World" })
+    assert_eq(res_status(response), 302)
+    assert_eq(Post.where({ "title": "Hello" }).count, 1)
+  end
+
+  test("refuses a post without a title, and writes nothing") do
+    count_before = Post.count
+    response = post("/posts", { "body": "World" })
+    assert_eq(res_status(response), 422)
+    # The form builder marks the field in error.
+    assert_contains(res_body(response), "name=\"title\" class=\"field-error\"")
+    assert_eq(Post.count, count_before)
+  end
+end
+
+describe("GET /posts/:id") do
+  test("answers 404 for an unknown id, not 500") do
+    assert_eq(res_status(get("/posts/no-such-key")), 404)
+  end
+end
+
+describe("POST /posts/:id/publish") do
+  test("refuses a visitor, and leaves the post unpublished") do
+    as_guest()
+    post_record = Post.create({ "title": "Draft" })
+    response = post("/posts/" + post_record._key + "/publish", {})
+    assert_eq(res_status(response), 403)
+    assert(!Post.find(post_record._key).published)
+  end
+end
+
+describe("Post") do
+  test("names the field a refused create is missing, and stores nothing") do
+    post_record = Post.create({ "body": "World" })
+    assert_eq(post_record._errors[0]["field"], "title")
+    assert_null(post_record._key)
+  end
+
+  test("find raises on an unknown key") do
+    message = assert_raises() do
+      Post.find("no-such-key")
+    end
+    assert_contains(message, "no-such-key")
+  end
+end
+```
+
+Two details in it: the record is `post_record` because a local named `post`
+would replace the `post()` request helper for the rest of the file, and the
+controller spec reads the refused field from the page because `assigns()`
+serialises a model the way `render_json` does — `_errors` is not in it. Check
+`_errors` in a model spec, as the last `describe` does.
+
+## File layout
+
+```
+tests/
+├── posts_controller_spec.sl     # E2E spec for PostsController
+├── post_model_spec.sl           # Unit spec for the Post model
+├── authenticate_middleware_spec.sl  # Middleware tested via E2E
+└── helpers/
+    └── markdown_helper_spec.sl  # Helper unit spec
+```
+
+One spec file per controller / model / helper. Match the filename to the
+target.
+
+## The DSL
+
+```soli
+describe("PostsController") do
+  before_each() do
+    as_guest()
+  end
+
+  describe("GET /posts") do
+    test("returns a list of posts") do
+      response = get("/posts")
+      assert_eq(res_status(response), 200)
+      assert_hash_has_key(assigns(), "posts")
+    end
+  end
+
+  describe("POST /posts") do
+    test("creates a post with valid params") do
+      as_user(1)
+      response = post("/posts", { "title": "Hi", "body": "..." })
+      assert_eq(res_status(response), 302)
+    end
+
+    test("re-renders new on validation failure") do
+      as_user(1)
+      response = post("/posts", { "title": "" })
+      assert_eq(res_status(response), 200)
+      assert_eq(view_path(), "posts/new.html")
+    end
+  end
+end
+```
+
+> `assigns()` holds the controller's `@fields` whether the view rendered by
+> convention or through `render("new", {}, {"status": 422})`.
+
+Keywords:
+
+| Keyword                         | What it does                                              |
+|---------------------------------|-----------------------------------------------------------|
+| `describe(name) do ... end`     | Suite. Can nest.                                          |
+| `context(name) do ... end`      | Alias for `describe` — use it when reading flows better.   |
+| `test(name) do ... end`         | A single case.                                            |
+| `it(name) do ... end`           | Alias for `test`.                                         |
+| `specify(name) do ... end`      | Also an alias for `test`.                                 |
+| `before_each() do ... end`      | Runs before every `test` in the suite and nested suites.  |
+| `after_each() do ... end`       | Runs after every `test`, even a failed one.               |
+| `before_all() do ... end`       | Runs once before any tests in the suite.                  |
+| `after_all() do ... end`        | Runs once after all tests in the suite.                   |
+| `pending("why")` / `skip("why")` | Stops the test and counts it as pending (not failing).   |
+
+Hooks need the parentheses: `before_each do` (no `()`) does not parse.
+
+- **Nested suites inherit hooks** — every enclosing `before_each` runs, outermost
+  first; `after_each` hooks run innermost first. One hook of each kind per `describe`.
+- **A hook that raises fails the test** (`before_each: <error>`; the body does not
+  run). A raising `before_all` fails the whole suite without running its tests.
+- `skip("why")` inside a `before_each` skips every test of the suite.
+
+### How the runner reads a spec
+
+The runner reads `describe`/`test` declarations **without running the `describe`
+bodies**. So:
+
+- A variable assigned in a `describe` body never reaches its tests. Put shared
+  state and helper `def`s at the top level of the file, and (re)assign the
+  variable in a `before_each`.
+- These fail the file with `N spec declaration problem(s)` — fix them rather than
+  work around them:
+  - a `describe`/`test` inside a top-level `if`, `unless`, loop or `try`;
+  - a `test` outside any `describe`;
+  - any statement in a `describe` body other than tests, nested suites and hooks;
+  - a test or suite name that is not a string literal (`"#{x}"`, a variable);
+  - two `before_each` (or two of any hook) in the same `describe`.
+
+```soli
+post = nil
+
+describe("Post") do
+  before_each() do
+    post = Post.create({ "title": "Hi", "body": "..." })
+  end
+
+  test("is persisted") do
+    assert_not_null(post._key)
+  end
+end
+```
+
+### Specs that need a service
+
+When a suite needs SoliDB or SoliKV, guard it in a `before_each` — never with a
+top-level `if` or a `try` probe that `return`s early from each test (that makes
+tests pass while testing nothing):
+
+```soli
+describe("RateLimiter") do
+  before_each() do
+    requires_solikv()      # or requires_solidb()
+  end
+
+  test("blocks the 6th call") do
+    5.times { RateLimiter.hit("ip") }
+    assert_not(RateLimiter.allowed?("ip"))
+  end
+end
+```
+
+Each test is skipped (counted as pending) when the service does not answer.
+Under `SOLI_REQUIRE_DB=1` — set it in CI — the skip becomes a failure.
+`solidb_available?()` / `solikv_available?()` return the answer as a Bool.
+
+## Assertions
+
+Pick the assertion that gives the **best failure message**.
+`assert_eq(status, 200)` fails with `expected 200, got 404`; `assert(status == 200)`
+only says `assertion failed`. Every `assert_*` takes an optional trailing message
+that is prefixed to the failure: `assert_eq(count, 3, "the cart size")` →
+`the cart size: expected 3, got 2`.
+
+```soli
+assert(cond)                       # cond must be the Bool true
+assert_not(cond)                   # cond must be the Bool false
+assert_eq(actual, expected)        # value equality
+assert_ne(actual, expected)        # inequality
+assert_null(v)                     # v is nil
+assert_not_null(v)
+assert_gt(a, b)                    # numeric: a > b
+assert_lt(a, b)                    # numeric: a < b
+assert_match(string, regex)        # regex match
+assert_contains(arr_or_str, item)  # array/string containment
+assert_hash_has_key(hash, key)
+assert_json(string)                # parses as valid JSON
+assert_raises("fragment") do ... end  # the block must raise; returns the message
+
+# Request specs — assert on the queries the endpoint ran (see below)
+assert_no_n_plus_one(response)     # fails if an AQL template fired in a loop
+assert_query_count(response, n)    # exactly n queries
+assert_max_queries(response, n)    # at most n queries
+```
+
+### Testing that something raises
+
+```soli
+test("refuses a negative amount") do
+  message = assert_raises("must be positive") do
+    Invoice.new({ "amount": -5 }).finalize
+  end
+  assert_contains(message, "-5")
+end
+```
+
+`assert_raises() do ... end` without a fragment accepts any error. It fails when
+the block raises nothing or a different error, and a failed assertion inside the
+block is not mistaken for the expected error. Don't hand-roll
+`raised = false; try ... catch ... end; assert(raised)`.
+
+### Guarding against N+1 in request specs
+
+Every `get`/`post`/… response carries `response["query_count"]` and
+`response["n_plus_one"]` (recorded by the `--dev` test server, same detection
+as the dev bar's N+1 badge). Assert on them to keep a list/index endpoint from
+regressing into a query-per-row loop:
+
+```soli
+test("posts index does not N+1") do
+  response = get("/posts")
+  assert_eq(res_status(response), 200)
+  assert_no_n_plus_one(response)     # preload with includes(...) if this trips
+  assert_max_queries(response, 3)    # or pin a budget
+end
+```
+
+**The check is opt-in, and that is the trap.** `assert_no_n_plus_one(response)`
+only looks at the response you hand it. An endpoint nobody asserts on is an
+endpoint nobody is watching — which is exactly how a screen ends up reading the
+same row three times per request for months. Put one on **every screen that
+renders a list**, as you write it.
+
+To guard the *whole* suite at once, run `soli test --fail-on-n1`: every request
+that trips the detector fails its test. Useful, but expect to triage before it
+goes green — it fires at **two** occurrences of the same AQL template in one
+request, which also catches two things that are not per-row loops:
+
+- a `before_delete` callback's bulk `REMOVE` (deleting one product reports
+  `2x FOR doc IN product_prices … REMOVE`);
+- an action that legitimately reads the same record twice for two purposes —
+  a guard, then a service — once per request, not once per row.
+
+So treat `--fail-on-n1` as an audit you run deliberately, and per-endpoint
+assertions as the thing that actually holds the line in CI.
+
+### `expect(...)` DSL
+
+For people who prefer reading left-to-right:
+
+```soli
+expect(user.name).to_equal("Alice")
+expect(user.posts).to_contain(post)
+expect(user.errors).to_be_null()
+expect(post.views).to_be_greater_than(0)
+expect(response_body).to_be_valid_json()
+expect(html).to_match("welcome")      # substring check, NOT a regex
+expect(payload).to_have_key("token")
+```
+
+Available matchers: `to_be`, `to_equal`, `to_not_be`, `to_not_equal`,
+`to_be_null`, `to_not_be_null`, `to_be_greater_than`, `to_be_less_than`,
+`to_be_greater_than_or_equal`, `to_be_less_than_or_equal`, `to_contain`,
+`to_match`, `to_have_key`, `to_be_valid_json`. `to_match` tests a substring —
+use `assert_match(string, regex)` for a pattern. Either style is fine — pick
+one per file and stick with it.
+
+## E2E controller helpers
+
+A controller spec gets a full HTTP client. The request runs through the real
+middleware stack, real controllers, real views, real DB.
+
+### Making requests
+
+```soli
+get(path)
+get(path, { "headers": {...} })            # with custom headers
+post(path, body)                            # body is a hash (form-style) or a string
+put(path, body)
+patch(path, body)
+delete(path)
+head(path)
+options(path)
+request(method, path, body, options)        # generic — when the named helpers don't fit
+```
+
+### Testing a file upload
+
+There is no multipart helper, so build the body by hand and declare the
+boundary. It is worth the trouble: this is the only route that goes through
+`find_uploaded_file` and the model's uploader, and therefore the only one that
+exercises an upload the way it actually runs.
+
+```soli
+def upload(path, field, filename, content_type, body)
+  boundary = "----soli-test"
+  payload = "--#{boundary}\r\n" +
+    "Content-Disposition: form-data; name=\"#{field}\"; filename=\"#{filename}\"\r\n" +
+    "Content-Type: #{content_type}\r\n\r\n" +
+    body + "\r\n--#{boundary}--\r\n"
+
+  set_header("Content-Type", "multipart/form-data; boundary=#{boundary}")
+  response = post(path, payload)
+  clear_headers()
+  response
+end
+```
+
+Two things that save an hour:
+
+- The content is a plain string. `File.read` rejects non-UTF-8, so a real image
+  **cannot** be loaded from disk. Declaring `image/png` over arbitrary text is
+  enough — the uploader validates the declared type and the size, and an
+  accepted upload is stored. Send `application/pdf` to exercise the refusal.
+- Calling `record.attach_<field>(...)` **directly from a spec fails**: the
+  `attach_upload` helper only exists in the server process. Upload over HTTP.
+
+### Inspecting the response
+
+```soli
+res_status(response)         # 200, 302, 404, ...
+res_body(response)           # raw response body (string)
+res_json(response)           # parsed JSON body
+res_header(response, "Location")
+res_headers(response)        # all headers as a hash
+res_redirect?(response)      # boolean — is 3xx?
+res_location(response)       # Location header
+res_ok?(response)            # 2xx
+res_client_error?(response)  # 4xx
+res_server_error?(response)  # 5xx
+res_not_found?(response)     # 404
+res_unauthorized?(response)  # 401
+res_forbidden?(response)     # 403
+res_unprocessable?(response) # 422
+```
+
+### Inspecting the view
+
+```soli
+assigns()                       # hash of @field values exposed to the view
+assign("post")                  # single field
+view_path()                     # e.g. "posts/show.html"
+render_template?()              # whether a template was rendered (false in pure JSON paths)
+```
+
+`assigns()` is the cleanest way to verify a controller did the right setup
+work without coupling to the rendered HTML.
+
+### Auth & session
+
+```soli
+as_guest()                          # clear all auth (default state for before_each)
+as_user(user_id)                    # log in as a given user
+as_user(user_id, { "role": "..." }) # user + session opts (writes to server-side store)
+as_role("admin")                    # first user with role == "admin" (single-table apps)
+sign_in("admin", id)                # separate-collection auth: writes session.admin_id
+sign_in("admin")                    # same, but uses Admin.first
+as_admin()                          # convenience: log in as user 1
+login(email, password)              # run the real login flow
+logout()
+current_user()                      # the logged-in user, or nil
+signed_in?()
+with_token("abc...")                # set a Bearer token header for the next request
+with_session({ "foo": "bar" })      # forge arbitrary session keys (gated by SEC-040)
+```
+
+Pick the helper that matches your auth shape:
+
+- **One `users` collection with a role string field** → `as_role("admin")` or `as_user(id, { "role": "admin" })`.
+- **Distinct `User` / `Admin` models with separate session keys** → `sign_in("admin", id)` / `sign_in("admin")`.
+- **Just need a logged-in user, no role checks** → `as_user(id)`.
+- **Non-conventional session keys, arbitrary seeding** → `with_session({ ... })`.
+
+### Request modifiers
+
+```soli
+set_header("X-Foo", "bar")    # add a header to all subsequent requests
+set_authorization("Bearer ...")
+clear_authorization()
+set_request_cookie("name", "value")
+clear_cookies()
+clear_headers()
+```
+
+Header/auth state persists across requests in the same `test` block. Use
+`before_each` to reset:
+
+```soli
+before_each() do
+  as_guest()
+  clear_headers()
+  clear_cookies()
+end
+```
+
+## Testing a model in isolation
+
+Models don't need the HTTP machinery — call them directly:
+
+```soli
+describe("Post") do
+  test("rejects empty title") do
+    post = Post.new({ "title": "", "body": "..." })
+    post.save
+    assert(post._errors.length > 0)
+    assert_eq(post._errors[0].field, "title")
+  end
+
+  test("normalize_title trims whitespace before save") do
+    post = Post.create({ "title": "  hello  ", "body": "x" })
+    assert_eq(post.title, "hello")
+  end
+
+  test("recent scope orders by created_at desc") do
+    Post.create({ "title": "old", "body": "x", "created_at": "2024-01-01" })
+    Post.create({ "title": "new", "body": "x", "created_at": "2026-01-01" })
+    recent = Post.recent.all
+    assert_eq(recent[0].title, "new")
+  end
+end
+```
+
+Hit the **real database** in model specs. Mocks let bugs through — the whole
+point of the model layer is the round-trip with the DB.
+
+## Coverage
+
+```bash
+soli test                                 # coverage is on by default (console report)
+soli test --no-coverage                   # turn it off for a fast loop
+soli test --coverage-min 90.0             # fail if total line coverage is < 90%
+soli test --coverage=html                 # also write an HTML report
+soli test --coverage=json,xml             # multiple report formats
+```
+
+- Coverage is collected on every run unless you pass `--no-coverage`.
+- Without an explicit `--coverage-min`, the threshold shown is `80.0`.
+- The **project policy** is 90% (see top-level scaffold `CLAUDE.md`).
+- Don't lower `--coverage-min` to ship — write the missing test.
+- `soli test --coverage --show-uncovered` lists the exact lines. Read it before
+  writing tests: it is faster than guessing which branch is missing.
+
+### The last few percent, and why 100% is not a goal
+
+Some lines can never be marked, whatever you write. Know them so you stop
+chasing them:
+
+- A bare `try` line is **never** counted, even when its body runs. Same for the
+  line after a `try` whose call always throws (a test pointed at an unreachable
+  host, say), and for some closing brackets of multi-line calls.
+- Anything gated on a value read from the environment. `setenv` was removed
+  (SEC-033), so one `soli test` run has one configuration, and the other branch
+  is unreachable. The fix is a design one: split the env read from the work, so
+  the work is a named method a spec can call directly.
+- Genuinely defensive branches — a unique-index race after an application-level
+  check, a fallback for state a guard normally sets.
+
+`coverage_exclude("**/glob/**")` works per **file**, not per line. Using it to
+reach a round number means hiding whole files from the report — the opposite of
+what the measure is for. A known 99% with a named reason for each remaining
+line beats a 100% obtained by looking away.
+
+## Selecting which specs to run
+
+```bash
+soli test                                 # all specs in tests/
+soli test tests/posts_controller_spec.sl  # one file
+soli test tests/controllers/              # one directory
+soli test --jobs 4                        # parallelism (see below)
+soli test --filter "creates a post"       # -n: tests whose describe + test name contain the text
+soli test --fail-fast                     # stop after the first failing test
+soli test --require-assertions            # fail any test that asserts nothing
+```
+
+`--filter` matches case-insensitively against the enclosing `describe` names
+plus the test name. Inside a file, use `pending("why")` / `skip("why")` to
+disable a single test (or a whole suite, from its `before_each`).
+
+A test that passes without asserting anything proves nothing: the summary
+counts them (`N tests made no assertions`), and `--require-assertions` fails
+them. A mock's `assert_received` counts as an assertion.
+
+## Parallelism
+
+`--jobs N` runs N workers in parallel.
+
+- Default: **3** if `app/controllers/` exists; **1** otherwise.
+- Each worker gets its own database (`<base>_w<i>_<suffix>`). Worker isolation
+  is automatic — you don't need to reset between specs to avoid bleed across
+  workers, just within them.
+- Cap is the number of spec files.
+
+## Test database lifecycle
+
+- Before the suite starts, each worker's database is **created fresh**, with
+  the app's schema: the runner runs `db/migrations` on the base test database
+  (then empties the rows they seeded) and gives every other worker database
+  the same collections and indexes. Nothing to call from a spec.
+- Those are the production indexes, unique ones included — two fixtures with
+  the same value in a uniquely indexed field fail on the second `create`.
+  Give each fixture its own value.
+- Between tests, state from earlier specs in the same worker may persist.
+  Use `before_each` to set up known starting state — don't rely on alphabetic
+  ordering between tests.
+
+## Running the verification loop
+
+Before reporting a feature done:
+
+```bash
+soli fmt <files-you-changed>              # 1. canonical layout — specs included
+soli lint <files-you-changed>             # 2. style/smell rules
+soli test tests/<relevant_spec>.sl        # 3. narrow, fast feedback
+soli test --coverage-min 90.0 --require-assertions  # 4. full sweep + gates
+```
+
+Specs are `.sl` files, so `soli fmt` formats them like any other code — run it
+on the spec you just wrote, not only on the app code it exercises.
+
+If a UI changed, also start the app and exercise the page in a browser.
+
+## Do / Don't
+
+| Do                                                            | Don't                                                              |
+|---------------------------------------------------------------|--------------------------------------------------------------------|
+| Write a new spec for every new behavior                       | Add code without a failing test first                               |
+| Test the refusals next to the success: bad input, wrong user, unknown id, the error raised | Ship a behavior whose only spec is the happy path              |
+| Assert what changed — the record, the count, the field in error | Assert the status code alone                                       |
+| Break the code a spec protects once, and watch the spec fail  | Trust a green spec you have never seen red                          |
+| Hit the real DB in model specs                                | Mock the DB just to make a model spec faster                        |
+| Use `assert_eq` / `expect(...).to_equal(...)` for clarity     | Use `assert(a == b)` — failure messages are worse                   |
+| Reset auth/session/headers in `before_each`                   | Assume the previous spec cleaned up                                 |
+| Inspect `assigns()` to verify controller behavior             | Grep the rendered HTML for `<h1>` text                              |
+| Use `as_user(id)` to set up an authenticated session           | Reimplement login by setting cookies by hand                        |
+| Use `#{expr}` for string interpolation                        | Use `\(expr)` — the lexer rejects it                                |
+| Use `pending("why")` for a known-flaky test you're investigating | Leave a `#` skipped block with no tracking                        |
+| Use `assert_raises("fragment") do ... end` for expected errors | Hand-roll `raised = false` + `try`/`catch` + `assert(raised)`       |
+| Guard a service-dependent suite with `requires_solidb()` in `before_each` | Wrap `describe` in `if db_up` or `return` early from tests |
+| Put shared variables at the top level, set them in `before_each` | Assign variables in a `describe` body — tests never see them      |
+| Pick one of `test` / `it` / `specify` per file and stick to it | Mix all three in one file — readers shouldn't have to think         |
