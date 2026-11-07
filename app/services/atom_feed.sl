@@ -3,27 +3,27 @@
 class AtomFeed
   static def build(board, base_url)
     page = board["page"]
-    page_url = "#{base_url}/s/#{page.slug}"
+    public_url = "#{base_url}/s/#{page.slug}"
     incidents = board["open_incidents"] + board["history"]
     updated = incidents.length > 0 ? AtomFeed.latest_change(incidents) : board["generated_at"]
     feed = Xml.build(
       "feed",
       {"xmlns": "http://www.w3.org/2005/Atom", "xml:lang": "fr"}
     ) do |root|
-      root.add("id", "#{page_url}/incidents.atom")
+      root.add("id", "#{public_url}/incidents.atom")
       root.add("title", "#{page.title} — incidents")
       root.add("subtitle", "Incidents et maintenances publiés par Vigie")
       root.add("updated", AtomFeed.iso(updated))
-      root.add("link", nil, {"rel": "self", "href": "#{page_url}/incidents.atom"})
-      root.add("link", nil, {"rel": "alternate", "href": page_url})
+      root.add("link", nil, {"rel": "self", "href": "#{public_url}/incidents.atom"})
+      root.add("link", nil, {"rel": "alternate", "href": public_url})
       root.add("generator", "Vigie (Soli)")
       incidents.each do |incident|
         root.add("entry") do |entry|
-          entry.add("id", "#{page_url}/incidents/#{incident["id"]}")
+          entry.add("id", "#{public_url}/incidents/#{incident["id"]}")
           entry.add("title", "[#{incident["status_label"]}] #{incident["title"]}")
           entry.add("link", nil, {
             "rel": "alternate",
-            "href": "#{page_url}/incidents/#{incident["id"]}"
+            "href": "#{public_url}/incidents/#{incident["id"]}"
           })
           entry.add("published", AtomFeed.iso(incident["started_at"]))
           entry.add("updated", AtomFeed.iso(AtomFeed.latest_change([incident])))

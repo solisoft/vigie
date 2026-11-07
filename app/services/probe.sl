@@ -21,7 +21,7 @@ class Probe
     refusal = TargetGuard.url_refusal(monitor.url, TargetGuard.allow_private?)
     return Probe.result("down", nil, nil, "Cible refusée : #{refusal}") unless refusal.nil?
 
-    options = {
+    request_options = {
       "timeout": monitor.timeout_s,
       "follow_redirects": monitor.follow_redirects,
       "User-Agent": USER_AGENT
@@ -31,11 +31,11 @@ class Probe
     latency_ms = 0
     keyword_found = true
     try
-      stream = HTTP.stream(monitor.http_method, monitor.url, options)
-      status_code = stream.status
+      http_stream = HTTP.stream(monitor.http_method, monitor.url, request_options)
+      status_code = http_stream.status
       latency_ms = Probe.elapsed_ms(started)
       wanted = monitor.keyword
-      keyword_found = Probe.body_contains?(stream, wanted, started, monitor.timeout_s) if wanted.present?
+      keyword_found = Probe.body_contains?(http_stream, wanted, started, monitor.timeout_s) if wanted.present?
     catch error
       return Probe.result(
         "down",
@@ -78,16 +78,16 @@ class Probe
   end
 
   # Reads line by line until the keyword shows up, the cap, or the deadline.
-  static def body_contains?(stream, keyword, started, timeout_s)
+  static def body_contains?(http_stream, keyword, started, timeout_s)
     read_bytes = 0
-    line = stream.next_line
+    line = http_stream.next_line
     while !line.nil?
       return true if line.includes?(keyword)
 
       read_bytes = read_bytes + line.length + 1
       return false if read_bytes > MAX_BODY_BYTES || clock - started > timeout_s
 
-      line = stream.next_line
+      line = http_stream.next_line
     end
     false
   end

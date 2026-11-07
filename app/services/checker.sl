@@ -9,20 +9,21 @@ const LIVE_TOPIC = "vigie:status"
 class Checker
   # Probes `monitor` now and records the result. nil when there was nothing
   # to record (a heartbeat still inside its first window).
+  # The whole run — probe and bookkeeping — is timed as
+  # vigie.check.duration (seconds; Metrics.time takes its tags positionally).
   static def run(monitor, now)
-    started = clock
-    result = Probe.run(monitor, now)
-    return nil if result.nil?
-
-    check = Checker.record(monitor, result, now)
-    Metrics.histogram("vigie.check.duration_ms", ((clock - started) * 1000).round, tags: {"kind": monitor.kind})
-    check
+    recorded_check = nil
+    Metrics.time("vigie.check.duration", {"kind": monitor.kind}) do
+      result = Probe.run(monitor, now)
+      recorded_check = Checker.record(monitor, result, now) unless result.nil?
+    end
+    recorded_check
   end
 
   static def record(monitor, result, now)
     in_maintenance = Maintenance.covering?(monitor._key, now)
     ok = result["status"] != "down"
-    check = Check.create({
+    recorded_check = Check.create({
       "monitor_id": monitor._key,
       "at": now,
       "day": Checker.day_of(now),
@@ -49,7 +50,7 @@ class Checker
     IncidentFlow.after_check(monitor, result, in_maintenance, now)
     Checker.emit_metrics(monitor, result)
     Checker.announce(monitor) if new_status != previous_status
-    check
+    recorded_check
   end
 
   # A failure only turns a monitor "down" once `threshold` of them happened in
@@ -65,7 +66,8 @@ class Checker
     tags = {"kind": monitor.kind, "status": result["status"]}
     Metrics.increment("vigie.checks", tags: tags)
     latency = result["latency_ms"]
-    Metrics.histogram("vigie.check.latency", latency, tags: {"kind": monitor.kind}) unless latency.nil?
+    # Seconds, so the default histogram buckets (1 ms … 10 s) fit.
+    Metrics.histogram("vigie.check.latency", latency / 1000.0, tags: {"kind": monitor.kind}) unless latency.nil?
   end
 
   # Pushes a small event to every open status page and dashboard (SSE).

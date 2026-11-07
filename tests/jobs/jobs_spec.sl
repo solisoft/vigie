@@ -112,3 +112,20 @@ describe("RollupJob and PurgeChecksJob") do
     assert_eq(Check.count, 1)
   end
 end
+
+describe("Check metrics") do
+  test("a run is timed, and its latency recorded in seconds") do
+    jobs_reset()
+    Metrics.reset
+    monitor = Monitor.create({
+      "name": "Timed",
+      "url": jobs_base + "/jobs/ok",
+      "interval_s": 60
+    })
+    Checker.run(monitor, DateTime.utc.to_unix)
+    assert_eq(Metrics.value("vigie.check.duration", {"kind": "http"})["count"], 1)
+    latency = Metrics.value("vigie.check.latency", {"kind": "http"})
+    assert_eq(latency["count"], 1)
+    assert(latency["sum"] < 5.0)
+  end
+end

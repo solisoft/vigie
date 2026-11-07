@@ -4,7 +4,7 @@ class CheckMonitorJob
     monitor = Monitor.find_by("_key", args["monitor_id"])
     return nil if monitor.nil? || monitor.paused
 
-    check = Checker.run(monitor, DateTime.utc.to_unix)
-    check&.status
+    recorded_check = Checker.run(monitor, DateTime.utc.to_unix)
+    recorded_check&.status
   end
 end

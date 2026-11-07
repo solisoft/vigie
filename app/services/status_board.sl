@@ -41,7 +41,7 @@ class StatusBoard
       ).order("started_at", "desc").limit(20).all
     })
     today = Checker.day_of(now)
-    context = {
+    board_context = {
       "now": now,
       "monitors": monitors.index_by("_key"),
       "maintenance_ids": maintenances.filter do |window|
@@ -56,7 +56,7 @@ class StatusBoard
       "today": today
     }
     rows = components.map do |component|
-      StatusBoard.component_row(component, context)
+      StatusBoard.component_row(component, board_context)
     end
     {
       "page": page,
@@ -64,23 +64,23 @@ class StatusBoard
       "groups": StatusBoard.group_rows(rows),
       "components": rows,
       "open_incidents": open_incidents.map do |incident|
-        StatusBoard.incident_row(incident, context)
+        StatusBoard.incident_row(incident, board_context)
       end,
       "maintenances": maintenances.map do |window|
         StatusBoard.maintenance_row(window, now)
       end,
       "history": history.map do |incident|
-        StatusBoard.incident_row(incident, context)
+        StatusBoard.incident_row(incident, board_context)
       end,
       "generated_at": now
     }
   end
 
-  static def component_row(component, context)
+  static def component_row(component, board_context)
     statuses = component.monitor_ids.map do |monitor_id|
-      StatusBoard.monitor_status(monitor_id, context)
+      StatusBoard.monitor_status(monitor_id, board_context)
     end.compact
-    context["open_incidents"].each do |incident|
+    board_context["open_incidents"].each do |incident|
       touches = incident.monitor_ids.any? do |monitor_id|
         component.monitor_ids.includes?(monitor_id)
       end
@@ -88,7 +88,7 @@ class StatusBoard
     end
     status = StatusBoard.worst(statuses)
     daily_rows = component.monitor_ids.map do |monitor_id|
-      context["daily"][monitor_id] ?? []
+      board_context["daily"][monitor_id] ?? []
     end.flatten
     {
       "name": component.name,
@@ -97,21 +97,21 @@ class StatusBoard
       "group": component.group_name,
       "status": status,
       "status_label": StatusBoard.status_label(status),
-      "uptime": StatusBoard.uptime_figures(component.monitor_ids, context),
-      "bars": Uptime.bars(daily_rows, context["today"])
+      "uptime": StatusBoard.uptime_figures(component.monitor_ids, board_context),
+      "bars": Uptime.bars(daily_rows, board_context["today"])
     }
   end
 
   # nil for a paused or deleted monitor: it does not speak for its component.
-  static def monitor_status(monitor_id, context)
-    monitor = context["monitors"][monitor_id]
+  static def monitor_status(monitor_id, board_context)
+    monitor = board_context["monitors"][monitor_id]
     return nil if monitor.nil? || monitor.paused
-    return "maintenance" if context["maintenance_ids"].includes?(monitor_id)
+    return "maintenance" if board_context["maintenance_ids"].includes?(monitor_id)
 
     monitor.status
   end
 
-  static def uptime_figures(monitor_ids, context)
+  static def uptime_figures(monitor_ids, board_context)
     totals = {
       "t1": 0,
       "u1": 0,
@@ -123,8 +123,8 @@ class StatusBoard
       "u90": 0
     }
     monitor_ids.each do |monitor_id|
-      windows = context["windows"][monitor_id] ?? {}
-      last_day = context["last_day"][monitor_id] ?? {}
+      windows = board_context["windows"][monitor_id] ?? {}
+      last_day = board_context["last_day"][monitor_id] ?? {}
       totals["t1"] = totals["t1"] + last_day["total"].to_i
       totals["u1"] = totals["u1"] + last_day["up"].to_i
       ["7", "30", "90"].each do |span|
@@ -181,7 +181,7 @@ class StatusBoard
     end
   end
 
-  static def incident_row(incident, context)
+  static def incident_row(incident, board_context)
     {
       "id": incident._key,
       "title": incident.title,
