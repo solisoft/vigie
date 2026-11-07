@@ -363,4 +363,39 @@ describe("DemoSeed") do
     assert_eq(second["checks"], 0)
     assert_not_null(User.find_by("email", DEMO_EMAIL))
   end
+
+  test("showcase: a public demo without an account, a heartbeat or alert channels") do
+    board_reset()
+    User.where({"email": DEMO_EMAIL}).all.each do |user|
+      user.delete
+    end
+    AlertChannel.all.each do |channel|
+      channel.delete
+    end
+    other = Monitor.create({"name": "Production", "url": "https://prod.example.com"})
+    Incident.create({
+      "title": "Panne réelle",
+      "kind": "auto",
+      "status": "resolved",
+      "monitor_ids": [other._key]
+    })
+    first = DemoSeed.showcase(DateTime.utc.to_unix)
+    assert_eq(first["page"], "demo")
+    assert_eq(first["monitors"], 3)
+    assert_null(User.find_by("email", DEMO_EMAIL))
+    assert_eq(AlertChannel.count, 0)
+    assert_eq(Monitor.where({"kind": "heartbeat"}).count, 0)
+    page = StatusPage.find_by("slug", "demo")
+    assert_eq(page.title, "Démo")
+    assert_eq(page.listed, true)
+    names = page.components.map do |component|
+      component.name
+    end
+    assert_eq(names, ["Site Soli", "Example.com"])
+    assert_eq(Incident.where({"kind": "auto"}).count, 3, "the demo gets its two past incidents next to the real one")
+    incidents_before = Incident.count
+    DemoSeed.showcase(DateTime.utc.to_unix)
+    assert_eq(Incident.count, incidents_before)
+    assert_eq(StatusPage.find_by("slug", "demo").components.length, 2)
+  end
 end

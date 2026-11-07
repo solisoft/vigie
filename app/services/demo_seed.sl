@@ -8,13 +8,29 @@ const DEMO_PASSWORD = "vigie-demo-2026"
 class DemoSeed
   static def run(now)
     user = DemoSeed.admin
-    monitors = DemoSeed.monitors
+    monitors = DemoSeed.monitors(true)
     page = DemoSeed.page(monitors)
     history = DemoSeed.history(monitors, now)
     DemoSeed.maintenance(monitors, now)
     DemoSeed.channels
     {
       "user": user.email,
+      "page": page.slug,
+      "monitors": monitors.length,
+      "rollups": history["rollups"],
+      "checks": history["checks"]
+    }
+  end
+
+  # The demo a public instance can show: real probes of public sites and
+  # synthetic history, but no account with a known password, no example alert
+  # channels, and no heartbeat — nobody would ping it, it would go down within
+  # the hour and page the instance's real channels.
+  static def showcase(now)
+    monitors = DemoSeed.monitors(false)
+    page = DemoSeed.page(monitors)
+    history = DemoSeed.history(monitors, now)
+    {
       "page": page.slug,
       "monitors": monitors.length,
       "rollups": history["rollups"],
@@ -33,7 +49,7 @@ class DemoSeed
     user
   end
 
-  static def monitors
+  static def monitors(with_heartbeat)
     definitions = [
       {
         "name": "Site Soli",
@@ -57,15 +73,17 @@ class DemoSeed
         "port": 443,
         "interval_s": 3600,
         "tls_warn_days": 14
-      },
-      {
+      }
+    ]
+    if with_heartbeat
+      definitions.push({
         "name": "Sauvegarde nocturne",
         "kind": "heartbeat",
         "interval_s": 3600,
         "grace_s": 600
-      }
-    ]
-    if TargetGuard.allow_private?
+      })
+    end
+    if with_heartbeat && TargetGuard.allow_private?
       self_url = (getenv("APP_URL") || "http://127.0.0.1:5099").delete_suffix("/").replace("localhost", "127.0.0.1")
       definitions.push({
         "name": "Vigie elle-même",
@@ -93,8 +111,8 @@ class DemoSeed
 
     page = StatusPage.create({
       "slug": DEMO_SLUG,
-      "title": "Solisoft",
-      "description": "État des services, mis à jour en direct",
+      "title": "Démo",
+      "description": "Une page de démonstration : des sondes réelles, un historique synthétique",
       "published": true
     })
     by_name = monitors.index_by("name")
@@ -111,7 +129,11 @@ class DemoSeed
     unless by_name["Vigie elle-même"].nil?
       layout.push(["Plateforme", "Vigie", "Cette instance, surveillée par elle-même", ["Vigie elle-même"]])
     end
-    layout.each_with_index do |entry, position|
+    layout.filter do |entry|
+      entry[3].any? do |name|
+        !by_name[name].nil?
+      end
+    end.each_with_index do |entry, position|
       ids = entry[3].map do |name|
         by_name[name]&._key
       end.compact
@@ -176,12 +198,24 @@ class DemoSeed
     figures
   end
 
+  # Once: the demo's own monitors, not the instance's (a production instance
+  # already has incidents of its own).
   static def incidents(monitors, now)
-    return nil if Incident.where({"kind": "auto"}).count > 0
+    ids = monitors.map do |monitor|
+      monitor._key
+    end
+    overlap = "doc.kind == 'auto' AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0"
+    seeded = Incident.where(overlap, {"ids": ids}).count
+    return nil if seeded > 0
 
     DemoSeed.past_incident(monitors[0], now - 12 * 86400 + 3600 * 9, 72 * 60, "HTTP 502 (attendu 200–399)")
     DemoSeed.past_incident(monitors[1], now - 37 * 86400 + 3600 * 15, 12 * 60, "Délai dépassé (10 s)")
-    DemoSeed.past_incident(monitors[3], now - 21 * 86400 + 3600 * 4, 2 * 3600, "Aucun ping reçu depuis 70 min")
+    heartbeat = monitors.find do |monitor|
+      monitor.kind == "heartbeat"
+    end
+    return nil if heartbeat.nil?
+
+    DemoSeed.past_incident(heartbeat, now - 21 * 86400 + 3600 * 4, 2 * 3600, "Aucun ping reçu depuis 70 min")
   end
 
   static def past_incident(monitor, started_at, duration, error)
