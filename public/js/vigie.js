@@ -46,10 +46,28 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  // Monitor form: show only the fieldset of the chosen kind.
+  function kindForms() {
+    document.querySelectorAll('[data-kind-form]:not([data-kind-ready])').forEach(function (form) {
+      form.setAttribute('data-kind-ready', '');
+      var select = form.querySelector('[data-kind-select]');
+      if (!select) return;
+      function sync() {
+        form.querySelectorAll('[data-kind]').forEach(function (fieldset) {
+          fieldset.hidden = fieldset.getAttribute('data-kind') !== select.value;
+        });
+      }
+      select.addEventListener('change', sync);
+      sync();
+    });
   }
-  document.addEventListener('soli:load', init);
+
+  function boot() { init(); kindForms(); }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+  document.addEventListener('soli:load', boot);
 })();

@@ -1,0 +1,22 @@
+<header class="desk-head">
+  <div><h1>Pages de statut</h1><p>Chaque page est publique à l'adresse /s/&lt;adresse&gt;.</p></div>
+  <div class="actions"><a class="button" href="/admin/pages/nouvelle">Nouvelle page</a></div>
+</header>
+<section class="panel">
+  <% if @pages.length == 0 %>
+    <div class="panel-body"><p class="empty">Aucune page.</p></div>
+  <% else %>
+    <table class="ledger">
+      <thead><tr><th scope="col">Page</th><th scope="col">Adresse</th><th scope="col">Publication</th></tr></thead>
+      <tbody>
+        <% @pages.each do |page| %>
+          <tr>
+            <td><a href="/admin/pages/<%= page._key %>"><%= page.title %></a></td>
+            <td class="mono"><a href="/s/<%= page.slug %>">/s/<%= page.slug %></a></td>
+            <td><%= page.published ? "Publiée" : "Brouillon" %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+</section>

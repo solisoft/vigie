@@ -73,6 +73,7 @@ class Incident < Model
     errors.push({"field": "title", "message": "est obligatoire"}) if @title.to_s.trim.blank?
     errors.push({"field": "status", "message": "statut inconnu"}) unless @status.blank? || INCIDENT_STATUSES.includes?(@status)
     errors.push({"field": "impact", "message": "impact inconnu"}) unless @impact.blank? || INCIDENT_IMPACTS.includes?(@impact)
+    errors.push({"field": "monitor_ids", "message": "choisissez au moins une sonde"}) if @monitor_ids.nil? || @monitor_ids.length == 0
     @_errors = (@_errors ?? []) + errors
     true
   end

@@ -39,8 +39,15 @@ class DemoSeed
       definitions.push({"name": "Vigie elle-même", "kind": "http", "url": "#{self_url}/health", "keyword": "ok", "interval_s": 30})
     end
     definitions.map do |definition|
-      Monitor.find_by("name", definition["name"]) ?? Monitor.create(definition)
+      Monitor.find_by("name", definition["name"]) ?? DemoSeed.create_monitor(definition)
     end
+  end
+
+  # A heartbeat starts as just pinged, so the demo is green until the cron
+  # (see the README) takes over.
+  static def create_monitor(definition)
+    definition["last_heartbeat_at"] = DateTime.utc.to_unix if definition["kind"] == "heartbeat"
+    Monitor.create(definition)
   end
 
   static def page(monitors)

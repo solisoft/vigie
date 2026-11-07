@@ -1,0 +1,11 @@
+<%- form_with(maintenance, {"url": url, "class": "form"}) do |f| -%>
+  <%- f.error_summary() %>
+  <div><%- f.label("title", "Titre") %><%- f.text_field("title", {"required": true}) %><%- f.errors_for("title") %></div>
+  <div><%- f.label("description", "Description") %><%- f.text_area("description") %></div>
+  <div class="row">
+    <div><label for="starts_at_local">Début (UTC)</label><input id="starts_at_local" type="datetime-local" name="starts_at_local" value="<%= starts_local %>" required><%- f.errors_for("starts_at") %></div>
+    <div><label for="ends_at_local">Fin (UTC)</label><input id="ends_at_local" type="datetime-local" name="ends_at_local" value="<%= ends_local %>" required><%- f.errors_for("ends_at") %></div>
+  </div>
+  <%- partial("shared/monitor_choices", {"choices": choices, "selected": maintenance.monitor_ids ?? []}) %>
+  <div class="form-actions"><%- f.submit("Enregistrer") %><a href="/admin/maintenances">Annuler</a></div>
+<%- end -%>

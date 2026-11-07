@@ -20,7 +20,7 @@ class SessionsController < Controller
     render(
       "sessions/new",
       {
-        "title": "Sign in",
+        "title": "Connexion",
         "error": "",
         "email": ""
       }
@@ -37,7 +37,7 @@ class SessionsController < Controller
     # each against thousands of accounts) and it is itself abusable as a
     # denial of service against a known address. This closes both.
     limiter = rate_limiter_from_ip(req, AUTH_ATTEMPTS_PER_IP, AUTH_IP_WINDOW_SECONDS)
-    return this._reject("Too many sign-in attempts. Try again in a few minutes.", email, 429) unless limiter.allowed()
+    return this._reject("Trop de tentatives. Réessayez dans quelques minutes.", email, 429) unless limiter.allowed()
 
     user = User.find_by("email", email)
 
@@ -60,7 +60,7 @@ class SessionsController < Controller
     # from this response.
     if !user.nil? && user.locked?()
       User.burn_password_work(password)
-      return this._reject("Invalid email or password", email, 401)
+      return this._reject("E-mail ou mot de passe incorrect", email, 401)
     end
 
     # Both branches must cost the same. `authenticate` runs Argon2id (~100ms);
@@ -71,11 +71,11 @@ class SessionsController < Controller
 
     unless authenticated
       user.register_failed_attempt() unless user.nil?
-      return this._reject("Invalid email or password", email, 401)
+      return this._reject("E-mail ou mot de passe incorrect", email, 401)
     end
 
     if auth_require_confirmed_email() && !user.confirmed?()
-      return this._reject("Please confirm your email address first — check your inbox.", email, 403)
+      return this._reject("Confirmez d'abord votre adresse e-mail.", email, 403)
     end
 
     user.clear_failed_attempts()
@@ -98,7 +98,7 @@ class SessionsController < Controller
       })
     end
 
-    redirect("/")
+    redirect("/admin")
   end
 
   # Re-render the sign-in form with an error and an accurate status code.
@@ -106,7 +106,7 @@ class SessionsController < Controller
   # leaking more than the others.
   def _reject(message, email, status)
     return render("sessions/new", {
-      "title": "Sign in",
+      "title": "Connexion",
       "error": message,
       "email": email
     }, {"status": status})

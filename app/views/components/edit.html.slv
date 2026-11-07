@@ -1,0 +1,17 @@
+<header class="desk-head">
+  <div><h1><%= title %></h1><p>Page <a href="/admin/pages/<%= @page._key %>"><%= @page.title %></a></p></div>
+  <div class="actions"><span class="danger"><%- button_to("Retirer", "/admin/composants/#{@component._key}", {"method": "delete", "confirm": "Retirer ce composant ?"}) %></span></div>
+</header>
+<section class="panel"><div class="panel-body">
+  <%- form_with(@component, {"url": "/admin/composants/#{@component._key}", "class": "form"}) do |f| -%>
+    <%- f.error_summary() %>
+    <div class="row">
+      <div><%- f.label("name", "Nom") %><%- f.text_field("name", {"required": true}) %><%- f.errors_for("name") %></div>
+      <div><%- f.label("group_name", "Groupe") %><%- f.text_field("group_name") %></div>
+      <div><%- f.label("position", "Ordre") %><%- f.number_field("position") %></div>
+    </div>
+    <div><%- f.label("description", "Description") %><%- f.text_field("description") %></div>
+    <%- partial("shared/monitor_choices", {"choices": @monitor_choices, "selected": @component.monitor_ids}) %>
+    <div class="form-actions"><%- f.submit("Enregistrer") %><a href="/admin/pages/<%= @page._key %>">Annuler</a></div>
+  <%- end -%>
+</div></section>

@@ -1,0 +1,42 @@
+<header class="desk-head">
+  <div><h1><%= title %></h1><p><a href="/s/<%= @page.slug %>">Voir la page publique →</a></p></div>
+  <div class="actions"><span class="danger"><%- button_to("Supprimer la page", "/admin/pages/#{@page._key}", {"method": "delete", "confirm": "Supprimer cette page et ses composants ?"}) %></span></div>
+</header>
+
+<section class="panel">
+  <div class="panel-head"><h2>Réglages</h2></div>
+  <div class="panel-body"><%- partial("pages/form", {"page": @page, "url": "/admin/pages/#{@page._key}"}) %></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Composants</h2><span class="faint">badge : /badge/&lt;nom&gt;.svg</span></div>
+  <% if @components.length == 0 %>
+    <div class="panel-body"><p class="empty">Aucun composant : la page est vide.</p></div>
+  <% else %>
+    <table class="ledger">
+      <thead><tr><th scope="col">Composant</th><th scope="col">Groupe</th><th scope="col">Sondes</th><th scope="col">Badge</th></tr></thead>
+      <tbody>
+        <% @components.each do |item| %>
+          <tr>
+            <td><a href="/admin/composants/<%= item._key %>"><%= item.name %></a></td>
+            <td><%= item.group_name %></td>
+            <td><%= item.monitor_ids.map { |id| @monitor_names[id]&.name ?? "?" }.join(", ") %></td>
+            <td><img src="/badge/<%= item.slug %>.svg" alt="Badge de <%= item.name %>" height="20"></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+  <div class="panel-body">
+    <form class="form" action="/admin/pages/<%= @page._key %>/composants" method="POST">
+      <%- csrf_field() %>
+      <div class="row">
+        <div><label for="component_name">Nouveau composant</label><input id="component_name" type="text" name="name" required></div>
+        <div><label for="component_group">Groupe</label><input id="component_group" type="text" name="group_name" placeholder="Web, API…"></div>
+        <div><label for="component_position">Ordre</label><input id="component_position" type="number" name="position" value="<%= @components.length %>"></div>
+      </div>
+      <%- partial("shared/monitor_choices", {"choices": @monitor_choices, "selected": []}) %>
+      <div class="form-actions"><button type="submit">Ajouter le composant</button></div>
+    </form>
+  </div>
+</section>

@@ -1,0 +1,9 @@
+<fieldset>
+  <legend>Sondes derrière ce composant</legend>
+  <% if choices.length == 0 %><p class="hint">Aucune sonde : <a href="/admin/sondes/nouvelle">créez-en une</a>.</p><% end %>
+  <div class="choices">
+    <% choices.each do |choice| %>
+      <label class="check"><input type="checkbox" name="monitor_ids[]" value="<%= choice["id"] %>" <%- selected.includes?(choice["id"]) ? "checked" : "" %>> <%= choice["name"] %> <span class="faint">· <%= choice["kind"] %></span></label>
+    <% end %>
+  </div>
+</fieldset>

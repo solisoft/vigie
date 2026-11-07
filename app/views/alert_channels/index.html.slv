@@ -1,0 +1,46 @@
+<header class="desk-head"><div><h1>Alertes</h1><p>Une alerte par transition : ouverture et résolution d'incident, certificat bientôt expiré. Rien pendant une maintenance.</p></div></header>
+<section class="panel">
+  <div class="panel-head"><h2>Canaux</h2></div>
+  <% if @channels.length == 0 %>
+    <div class="panel-body"><p class="empty">Aucun canal : personne n'est prévenu.</p></div>
+  <% else %>
+    <div class="table-wrap">
+      <table class="ledger">
+        <thead><tr><th scope="col">Canal</th><th scope="col">Type</th><th scope="col">Actif</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+          <% @channels.each do |channel| %>
+            <tr>
+              <td><%= channel.name %><span class="target"><%= channel.target %></span></td>
+              <td><%= channel.kind_label %></td>
+              <td><%= channel.active ? "Oui" : "Non" %></td>
+              <td><div class="actions"><span class="ghost"><%- button_to("Tester", "/admin/alertes/#{channel._key}/test", {"method": "post"}) %></span><span class="danger"><%- button_to("Supprimer", "/admin/alertes/#{channel._key}", {"method": "delete", "confirm": "Supprimer ce canal ?"}) %></span></div></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+  <div class="panel-body">
+    <%- form_with(@channel, {"url": "/admin/alertes", "class": "form"}) do |f| -%>
+      <%- f.error_summary() %>
+      <div class="row">
+        <div><%- f.label("name", "Nom") %><%- f.text_field("name", {"required": true}) %><%- f.errors_for("name") %></div>
+        <div><%- f.label("kind", "Type") %><%- f.select("kind", @kinds) %></div>
+      </div>
+      <div><%- f.label("target", "Adresse e-mail ou URL https://") %><%- f.text_field("target", {"required": true}) %><%- f.errors_for("target") %></div>
+      <label class="check"><%- f.check_box("active") %> Actif</label>
+      <div class="form-actions"><%- f.submit("Ajouter le canal") %></div>
+    <%- end -%>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Derniers envois</h2></div>
+  <div class="panel-body">
+    <% if @deliveries.length == 0 %><p class="empty">Aucune alerte envoyée.</p><% end %>
+    <ul class="history">
+      <% @deliveries.each do |delivery| %>
+        <li><strong><%= delivery.summary %></strong><p><%= delivery.event %> · <%= french_time(delivery.at) %></p></li>
+      <% end %>
+    </ul>
+  </div>
+</section>

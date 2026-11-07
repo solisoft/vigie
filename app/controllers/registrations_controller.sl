@@ -11,10 +11,12 @@ class RegistrationsController < Controller
 
   # GET /signup
   def new
+    return redirect("/login") if User.count > 0
+
     render(
       "registrations/new",
       {
-        "title": "Create account",
+        "title": "Premier compte",
         "error": "",
         "user": User.new()
       }
@@ -23,6 +25,8 @@ class RegistrationsController < Controller
 
   # POST /signup
   def create
+    return redirect("/login") if User.count > 0
+
     user = User.new()
     user.email = params["email"]
 
@@ -30,7 +34,7 @@ class RegistrationsController < Controller
     # an app ends up seeding spam, and it is also a cheap Argon2id CPU sink
     # (every attempt costs the server ~100ms of hashing).
     limiter = rate_limiter_from_ip(req, AUTH_ATTEMPTS_PER_IP, AUTH_IP_WINDOW_SECONDS)
-    return this._reject(user, "Too many sign-up attempts. Try again in a few minutes.", 429) unless limiter.allowed()
+    return this._reject(user, "Trop de tentatives. Réessayez dans quelques minutes.", 429) unless limiter.allowed()
 
     # `set_password` is a no-op on a blank value (so profile saves don't wipe
     # the digest), which means the length rule has to be checked here or an
@@ -40,7 +44,7 @@ class RegistrationsController < Controller
 
     user.set_password(params["password"].to_s)
     user.save()
-    return this._reject(user, "Could not create your account", 422) if user._errors
+    return this._reject(user, "Impossible de créer le compte", 422) if user._errors
 
     # Send the confirmation link. `rescue null` keeps signup working before
     # SMTP is configured (set SOLI_MAIL_DELIVERY_METHOD=logger in dev to see
@@ -63,7 +67,7 @@ class RegistrationsController < Controller
     session_set("user_id", user["_key"])
     # Stamped so a later password reset can invalidate this session.
     session_set("session_version", user.current_session_version())
-    redirect("/")
+    redirect("/admin")
   end
 
   private
@@ -71,7 +75,7 @@ class RegistrationsController < Controller
   # Re-render the sign-up form with an error and an accurate status code.
   def _reject(user, message, status)
     return render("registrations/new", {
-      "title": "Create account",
+      "title": "Premier compte",
       "user": user,
       "error": message
     }, {"status": status})

@@ -1,0 +1,4 @@
+<header class="desk-head"><div><h1><%= title %></h1><p>HTTP(S), certificat TLS ou heartbeat.</p></div></header>
+<section class="panel"><div class="panel-body">
+  <%- partial("monitors/form", {"monitor": @monitor, "url": "/admin/sondes", "kinds": @kinds, "methods": @methods}) %>
+</div></section>

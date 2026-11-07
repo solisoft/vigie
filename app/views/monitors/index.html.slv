@@ -1,0 +1,26 @@
+<header class="desk-head">
+  <div><h1>Sondes</h1><p><%= @monitors.length %> sonde(s)</p></div>
+  <div class="actions"><a class="button" href="/admin/sondes/nouvelle">Nouvelle sonde</a></div>
+</header>
+<section class="panel">
+  <% if @monitors.length == 0 %>
+    <div class="panel-body"><p class="empty">Aucune sonde. Commencez par surveiller votre page d'accueil.</p></div>
+  <% else %>
+    <div class="table-wrap">
+      <table class="ledger">
+        <thead><tr><th scope="col">Sonde</th><th scope="col">Type</th><th scope="col">État</th><th scope="col" class="hide-sm">Intervalle</th><th scope="col" class="hide-sm">Dernier contrôle</th></tr></thead>
+        <tbody>
+          <% @monitors.each do |monitor| %>
+            <tr>
+              <td><a href="/admin/sondes/<%= monitor._key %>"><%= monitor.name %></a><span class="target"><%= monitor.target_label %></span></td>
+              <td><%= monitor.kind_label %></td>
+              <td><span class="chip s-<%= monitor.paused ? "paused" : monitor.status %>"><%- status_icon(monitor.paused ? "paused" : monitor.status) %><%= status_text(monitor.paused ? "paused" : monitor.status) %></span></td>
+              <td class="num hide-sm"><%= monitor.interval_s %> s</td>
+              <td class="hide-sm"><%= french_time(monitor.last_checked_at) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+</section>

@@ -1,0 +1,29 @@
+<header class="desk-head">
+  <div><h1>Incidents</h1><p>Ouverts automatiquement après N échecs, ou déclarés à la main.</p></div>
+  <div class="actions"><a class="button" href="/admin/incidents/nouveau">Déclarer un incident</a></div>
+</header>
+<section class="panel">
+  <div class="panel-head"><h2>En cours</h2></div>
+  <div class="panel-body">
+    <% if @open.length == 0 %><p class="empty">Aucun incident en cours.</p><% end %>
+    <ul class="history">
+      <% @open.each do |incident| %>
+        <li>
+          <a href="/admin/incidents/<%= incident._key %>"><%= incident.title %></a>
+          <p><span class="chip s-<%= incident.impact == "degraded" ? "degraded" : "down" %>"><%- status_icon(incident.impact == "degraded" ? "degraded" : "down") %><%= incident.status_label %></span> depuis le <%= french_time(incident.started_at) %> · <%= incident.kind == "auto" ? "automatique" : "manuel" %></p>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Résolus</h2></div>
+  <div class="panel-body">
+    <% if @recent.length == 0 %><p class="empty">Rien à signaler.</p><% end %>
+    <ul class="history">
+      <% @recent.each do |incident| %>
+        <li><a href="/admin/incidents/<%= incident._key %>"><%= incident.title %></a><p><%= french_time(incident.started_at) %> → <%= french_time(incident.resolved_at) %></p></li>
+      <% end %>
+    </ul>
+  </div>
+</section>

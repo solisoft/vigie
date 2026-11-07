@@ -1,0 +1,7 @@
+<header class="desk-head">
+  <div><h1><%= title %></h1></div>
+  <div class="actions"><span class="danger"><%- button_to("Supprimer", "/admin/maintenances/#{@maintenance._key}", {"method": "delete", "confirm": "Supprimer cette maintenance ?"}) %></span></div>
+</header>
+<section class="panel"><div class="panel-body">
+  <%- partial("maintenances/form", {"maintenance": @maintenance, "url": "/admin/maintenances/#{@maintenance._key}", "choices": @monitor_choices, "starts_local": @starts_local, "ends_local": @ends_local}) %>
+</div></section>

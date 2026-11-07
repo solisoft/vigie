@@ -1,0 +1,39 @@
+<header class="desk-head">
+  <div>
+    <h1><%= @incident.title %></h1>
+    <p><%= @incident.kind == "auto" ? "Ouvert automatiquement" : "Déclaré à la main" %> le <%= french_time(@incident.started_at) %> · <%= @incident.impact_label %></p>
+  </div>
+  <div class="actions"><span class="danger"><%- button_to("Supprimer", "/admin/incidents/#{@incident._key}", {"method": "delete", "confirm": "Supprimer cet incident et son historique ?"}) %></span></div>
+</header>
+<section class="panel">
+  <div class="panel-head">
+    <h2>Chronologie</h2>
+    <span class="chip s-<%= @incident.open? ? (@incident.impact == "degraded" ? "degraded" : "down") : "up" %>"><%- status_icon(@incident.open? ? "down" : "up") %><%= @incident.status_label %></span>
+  </div>
+  <div class="panel-body">
+    <p class="muted">Sondes : <%= @incident.monitor_ids.map { |id| @monitor_names[id]&.name ?? "supprimée" }.join(", ") %></p>
+    <ol class="timeline">
+      <% @updates.each do |update| %>
+        <li><strong><%= update.status_label %></strong><time datetime="<%= iso_time(update.at) %>"><%= french_time(update.at) %></time><p><%= update.message %></p></li>
+      <% end %>
+    </ol>
+  </div>
+</section>
+<% if @incident.open? %>
+  <section class="panel">
+    <div class="panel-head"><h2>Publier un suivi</h2></div>
+    <div class="panel-body">
+      <form class="form" action="/admin/incidents/<%= @incident._key %>/suivis" method="POST">
+        <%- csrf_field() %>
+        <div>
+          <label for="status">Statut</label>
+          <select id="status" name="status">
+            <% @statuses.each do |choice| %><option value="<%= choice[1] %>" <%- choice[1] == @incident.status ? "selected" : "" %>><%= choice[0] %></option><% end %>
+          </select>
+        </div>
+        <div><label for="update_message">Message</label><textarea id="update_message" name="message" required></textarea></div>
+        <div class="form-actions"><button type="submit">Publier le suivi</button></div>
+      </form>
+    </div>
+  </section>
+<% end %>

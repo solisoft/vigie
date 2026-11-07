@@ -1,0 +1,28 @@
+<header class="desk-head">
+  <div><h1>Maintenances</h1><p>Heures en UTC.</p></div>
+  <div class="actions"><a class="button" href="/admin/maintenances/nouvelle">Planifier</a></div>
+</header>
+<section class="panel">
+  <div class="panel-head"><h2>En cours et à venir</h2></div>
+  <div class="panel-body">
+    <% if @upcoming.length == 0 %><p class="empty">Aucune maintenance planifiée.</p><% end %>
+    <ul class="history">
+      <% @upcoming.each do |window| %>
+        <li>
+          <a href="/admin/maintenances/<%= window._key %>"><%= window.title %></a>
+          <p><span class="chip s-maintenance"><%- status_icon("maintenance") %><%= window.active_at?(@now) ? "En cours" : "Planifiée" %></span> <%= french_time(window.starts_at) %> → <%= french_time(window.ends_at) %></p>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Passées</h2></div>
+  <div class="panel-body">
+    <ul class="history">
+      <% @past.each do |window| %>
+        <li><a href="/admin/maintenances/<%= window._key %>"><%= window.title %></a><p><%= french_time(window.starts_at) %> → <%= french_time(window.ends_at) %></p></li>
+      <% end %>
+    </ul>
+  </div>
+</section>

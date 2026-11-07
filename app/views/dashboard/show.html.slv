@@ -1,0 +1,54 @@
+<div data-live-url="/admin/live">
+  <header class="desk-head">
+    <div>
+      <h1>Tableau de bord</h1>
+      <p><span class="live-dot" data-live-dot data-state="off" aria-hidden="true"></span>Sondes en temps réel<span data-live-text class="faint"></span></p>
+    </div>
+    <div class="actions"><a class="button" href="/admin/sondes/nouvelle">Nouvelle sonde</a></div>
+  </header>
+
+  <div data-live-region>
+    <div class="tiles">
+      <div class="tile"><b><%= @board["counts"]["up"] %></b><span>opérationnelles</span></div>
+      <div class="tile t-degraded"><b><%= @board["counts"]["degraded"] %></b><span>dégradées</span></div>
+      <div class="tile t-down"><b><%= @board["counts"]["down"] %></b><span>en panne</span></div>
+      <div class="tile"><b><%= @board["open_incidents"] %></b><span><a href="/admin/incidents">incident(s) ouvert(s)</a></span></div>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Sondes</h2><span class="faint">latence sur 6 h · disponibilité 24 h / 30 j</span></div>
+      <% if @board["rows"].length == 0 %>
+        <div class="panel-body"><p class="empty">Aucune sonde. <a href="/admin/sondes/nouvelle">Créer la première</a>.</p></div>
+      <% else %>
+        <div class="table-wrap">
+          <table class="ledger">
+            <thead>
+              <tr>
+                <th scope="col">Sonde</th><th scope="col">État</th><th scope="col" class="hide-sm">Latence (6 h)</th>
+                <th scope="col" class="num">Dernière</th><th scope="col" class="num hide-sm">p95 24 h</th>
+                <th scope="col" class="num">24 h</th><th scope="col" class="num hide-sm">30 j</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @board["rows"].each do |row| %>
+                <tr>
+                  <td><a href="/admin/sondes/<%= row["id"] %>"><%= row["name"] %></a><span class="target"><%= row["target"] %></span></td>
+                  <td>
+                    <span class="chip s-<%= row["status"] %>"><%- status_icon(row["status"]) %><%= status_text(row["status"]) %></span>
+                    <% if row["error"].present? %><span class="target"><%= row["error"] %></span><% end %>
+                  </td>
+                  <td class="hide-sm"><%- row["spark"] %></td>
+                  <td class="num"><%= latency_label(row["latency_ms"]) %></td>
+                  <td class="num hide-sm"><%= latency_label(row["p95_ms"]) %></td>
+                  <td class="num"><%= percent_label(row["uptime_24h"]) %></td>
+                  <td class="num hide-sm"><%= percent_label(row["uptime_30d"]) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+    </section>
+  </div>
+  <p class="sr-only" aria-live="polite" data-live-announce></p>
+</div>

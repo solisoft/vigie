@@ -1,0 +1,26 @@
+<%- form_with(page, {"url": url, "class": "form"}) do |f| -%>
+  <%- f.error_summary() %>
+  <div class="row">
+    <div>
+      <%- f.label("title", "Titre") %>
+      <%- f.text_field("title", {"required": true}) %>
+      <%- f.errors_for("title") %>
+    </div>
+    <div>
+      <%- f.label("slug", "Adresse : /s/…") %>
+      <%- f.text_field("slug", {"placeholder": "mon-service"}) %>
+      <%- f.errors_for("slug") %>
+    </div>
+  </div>
+  <div>
+    <%- f.label("description", "Sous-titre") %>
+    <%- f.text_field("description") %>
+  </div>
+  <div>
+    <%- f.label("logo_url", "Logo (URL https:// ou chemin /)") %>
+    <%- f.text_field("logo_url") %>
+    <%- f.errors_for("logo_url") %>
+  </div>
+  <label class="check"><%- f.check_box("published") %> Publiée</label>
+  <div class="form-actions"><%- f.submit("Enregistrer") %><a href="/admin/pages">Annuler</a></div>
+<%- end -%>

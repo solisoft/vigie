@@ -35,7 +35,7 @@ end
 def latency_label(value)
   return "—" if value.nil?
 
-  "#{value.round.to_i} ms"
+  "#{value.to_f.round.to_i} ms"
 end
 
 # The status words, never the colour alone.

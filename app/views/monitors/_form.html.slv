@@ -1,0 +1,106 @@
+<%- form_with(monitor, {"url": url, "class": "form", "data-kind-form": true}) do |f| -%>
+  <%- f.error_summary() %>
+  <div class="row">
+    <div>
+      <%- f.label("name", "Nom") %>
+      <%- f.text_field("name", {"required": true, "maxlength": 80}) %>
+      <%- f.errors_for("name") %>
+    </div>
+    <div>
+      <%- f.label("kind", "Type") %>
+      <%- f.select("kind", kinds, {"data-kind-select": true}) %>
+      <%- f.errors_for("kind") %>
+    </div>
+  </div>
+
+  <fieldset class="kind-fields" data-kind="http">
+    <legend>HTTP(S)</legend>
+    <div>
+      <%- f.label("url", "URL") %>
+      <%- f.text_field("url", {"placeholder": "https://exemple.fr/sante", "inputmode": "url"}) %>
+      <span class="hint">Les adresses privées et locales sont refusées (protection SSRF).</span>
+      <%- f.errors_for("url") %>
+    </div>
+    <div class="row">
+      <div>
+        <%- f.label("http_method", "Méthode") %>
+        <%- f.select("http_method", methods) %>
+      </div>
+      <div>
+        <%- f.label("status_min", "Statut attendu, de") %>
+        <%- f.number_field("status_min", {"min": 100, "max": 599}) %>
+      </div>
+      <div>
+        <%- f.label("status_max", "à") %>
+        <%- f.number_field("status_max", {"min": 100, "max": 599}) %>
+        <%- f.errors_for("status_max") %>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <%- f.label("keyword", "Mot-clé attendu (facultatif)") %>
+        <%- f.text_field("keyword") %>
+        <span class="hint">Cherché dans les 512 premiers Kio de la réponse.</span>
+      </div>
+      <div>
+        <%- f.label("degraded_ms", "Dégradé au-delà de (ms)") %>
+        <%- f.number_field("degraded_ms", {"min": 0}) %>
+        <span class="hint">0 : pas de seuil.</span>
+      </div>
+    </div>
+    <label class="check"><%- f.check_box("follow_redirects") %> Suivre les redirections</label>
+  </fieldset>
+
+  <fieldset class="kind-fields" data-kind="tls">
+    <legend>Certificat TLS</legend>
+    <div class="row">
+      <div>
+        <%- f.label("host", "Hôte") %>
+        <%- f.text_field("host", {"placeholder": "exemple.fr"}) %>
+        <%- f.errors_for("host") %>
+      </div>
+      <div>
+        <%- f.label("port", "Port") %>
+        <%- f.number_field("port", {"min": 1, "max": 65535}) %>
+        <%- f.errors_for("port") %>
+      </div>
+      <div>
+        <%- f.label("tls_warn_days", "Alerter à (jours)") %>
+        <%- f.number_field("tls_warn_days", {"min": 1, "max": 90}) %>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="kind-fields" data-kind="heartbeat">
+    <legend>Heartbeat</legend>
+    <p class="hint">Votre tâche appelle une URL secrète à chaque passage. Sans appel pendant l'intervalle plus la marge, la sonde passe en panne.</p>
+    <div>
+      <%- f.label("grace_s", "Marge (s)") %>
+      <%- f.number_field("grace_s", {"min": 0}) %>
+    </div>
+  </fieldset>
+
+  <div class="row">
+    <div>
+      <%- f.label("interval_s", "Intervalle (s)") %>
+      <%- f.number_field("interval_s", {"min": 30, "max": 3600}) %>
+      <%- f.errors_for("interval_s") %>
+    </div>
+    <div>
+      <%- f.label("timeout_s", "Délai max (s)") %>
+      <%- f.number_field("timeout_s", {"min": 1, "max": 60}) %>
+      <%- f.errors_for("timeout_s") %>
+    </div>
+    <div>
+      <%- f.label("failure_threshold", "Échecs avant incident") %>
+      <%- f.number_field("failure_threshold", {"min": 1, "max": 10}) %>
+      <%- f.errors_for("failure_threshold") %>
+    </div>
+  </div>
+  <label class="check"><%- f.check_box("paused") %> En pause</label>
+
+  <div class="form-actions">
+    <%- f.submit("Enregistrer") %>
+    <a href="/admin/sondes">Annuler</a>
+  </div>
+<%- end -%>

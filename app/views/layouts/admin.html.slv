@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> · Vigie</title>
+  <% share_description = description ?? "Administration de Vigie." %>
+  <% share_url = absolute_url(req ? req["path"] : "/") %>
+  <meta name="description" content="<%= share_description %>">
+  <meta name="robots" content="noindex">
+  <link rel="canonical" href="<%= share_url %>">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Vigie">
+  <meta property="og:title" content="<%= title %> · Vigie">
+  <meta property="og:description" content="<%= share_description %>">
+  <meta property="og:url" content="<%= share_url %>">
+  <meta property="og:image" content="<%= absolute_url(og_image ?? "/images/og.png") %>">
+  <meta name="twitter:card" content="summary_large_image">
+  <%- csrf_meta_tag() %>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="<%= public_path("css/vigie.css") %>">
+</head>
+<body>
+  <div class="deck">
+    <aside class="rail">
+      <a class="rail-brand" href="/admin"><%- partial("shared/mark", {}) %>Vigie</a>
+      <nav aria-label="Administration">
+        <a href="/admin" <%- @nav == "dashboard" ? "aria-current=\"page\"" : "" %>>Tableau de bord</a>
+        <a href="/admin/sondes" <%- @nav == "monitors" ? "aria-current=\"page\"" : "" %>>Sondes</a>
+        <a href="/admin/incidents" <%- @nav == "incidents" ? "aria-current=\"page\"" : "" %>>Incidents</a>
+        <a href="/admin/maintenances" <%- @nav == "maintenances" ? "aria-current=\"page\"" : "" %>>Maintenances</a>
+        <a href="/admin/pages" <%- @nav == "pages" ? "aria-current=\"page\"" : "" %>>Pages de statut</a>
+        <a href="/admin/alertes" <%- @nav == "alerts" ? "aria-current=\"page\"" : "" %>>Alertes</a>
+      </nav>
+      <div class="rail-foot">
+        <% if signed_in? %>
+          <span><%= current_user().email %></span>
+          <%- button_to("Se déconnecter", "/logout", {"method": "delete"}) %>
+        <% end %>
+      </div>
+    </aside>
+    <main class="desk">
+      <% flashes().each do |message| %>
+        <div class="flash <%= message["type"] %>" role="status"><%= message["message"] %></div>
+      <% end %>
+      <%= yield %>
+    </main>
+  </div>
+  <script defer src="<%= public_path("js/vigie.js") %>"></script>
+</body>
+</html>

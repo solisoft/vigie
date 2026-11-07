@@ -1,0 +1,68 @@
+<header class="desk-head">
+  <div>
+    <h1><%= @monitor.name %></h1>
+    <p><%= @monitor.kind_label %> · <span class="mono"><%= @monitor.target_label %></span></p>
+  </div>
+  <div class="actions">
+    <%- button_to("Vérifier maintenant", "/admin/sondes/#{@monitor._key}/verifier", {"method": "post"}) %>
+    <a class="button ghost" href="/admin/sondes/<%= @monitor._key %>/modifier">Modifier</a>
+    <span class="danger"><%- button_to("Supprimer", "/admin/sondes/#{@monitor._key}", {"method": "delete", "confirm": "Supprimer cette sonde et ses contrôles ?"}) %></span>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>État</h2>
+    <span class="chip s-<%= @board["status"] %>"><%- status_icon(@board["status"]) %><%= status_text(@board["status"]) %></span>
+  </div>
+  <dl class="figures">
+    <div><dt>24 h</dt><dd><%= percent_label(@uptime["24h"]) %></dd></div>
+    <div><dt>7 jours</dt><dd><%= percent_label(@uptime["7d"]) %></dd></div>
+    <div><dt>30 jours</dt><dd><%= percent_label(@uptime["30d"]) %></dd></div>
+    <div><dt>90 jours</dt><dd><%= percent_label(@uptime["90d"]) %></dd></div>
+    <div><dt>p50 · 24 h</dt><dd><%= latency_label(@board["p50_ms"]) %></dd></div>
+    <div><dt>p95 · 24 h</dt><dd><%= latency_label(@board["p95_ms"]) %></dd></div>
+  </dl>
+  <div class="panel-body">
+    <% if @board["error"].present? %><p><strong>Dernière erreur :</strong> <%= @board["error"] %></p><% end %>
+    <% if @monitor.kind == "tls" && !@monitor.tls_days_left.nil? %><p>Le certificat expire dans <strong><%= @monitor.tls_days_left %> jours</strong> (<%= @monitor.tls_not_after %>).</p><% end %>
+    <% if @monitor.kind == "heartbeat" %>
+      <p>URL à appeler depuis votre tâche planifiée :</p>
+      <div class="copy"><code><%= @ping_url %></code></div>
+      <p class="hint faint">Par exemple : <span class="mono">curl -fsS <%= @ping_url %></span> à la fin du script. Dernier ping : <%= french_time(@monitor.last_heartbeat_at) %>.</p>
+    <% end %>
+    <%- @board["spark"] %>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Derniers contrôles</h2></div>
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead><tr><th scope="col">Quand</th><th scope="col">Résultat</th><th scope="col" class="num">Latence</th><th scope="col" class="num">HTTP</th><th scope="col">Détail</th></tr></thead>
+      <tbody>
+        <% @checks.each do |check| %>
+          <tr>
+            <td><%= french_time(check.at) %><% if check.maintenance %> <span class="faint">(maintenance)</span><% end %></td>
+            <td><span class="chip s-<%= check.status %>"><%- status_icon(check.status) %><%= status_text(check.status) %></span></td>
+            <td class="num"><%= latency_label(check.latency_ms) %></td>
+            <td class="num"><%= check.http_status.to_s %></td>
+            <td><%= check.error.to_s %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Incidents</h2></div>
+  <div class="panel-body">
+    <% if @incidents.length == 0 %><p class="empty">Aucun incident.</p><% end %>
+    <ul class="history">
+      <% @incidents.each do |incident| %>
+        <li><a href="/admin/incidents/<%= incident._key %>"><%= incident.title %></a><p><%= french_time(incident.started_at) %> · <%= incident.status_label %></p></li>
+      <% end %>
+    </ul>
+  </div>
+</section>
