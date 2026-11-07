@@ -240,3 +240,123 @@ describe("Probe.heartbeat") do
     assert_eq(Probe.run(monitor, now)["status"], "up")
   end
 end
+
+describe("Probe.tcp and Probe.udp") do
+  test("a TCP port that accepts connections is up; one that refuses them is down") do
+    port = mock_http_server_start()
+    open_port = Probe.run(probe_monitor({
+      "kind": "tcp",
+      "host": "127.0.0.1",
+      "port": port
+    }), DateTime.utc.to_unix)
+    unless defined("TCP")
+      assert_eq(open_port["status"], "down")
+      assert_contains(open_port["error"], "Soli 2.33")
+      return nil
+    end
+
+    assert_eq(open_port["status"], "up")
+    assert_not_null(open_port["latency_ms"])
+    closed = Probe.run(probe_monitor({
+      "kind": "tcp",
+      "host": "127.0.0.1",
+      "port": 1
+    }), DateTime.utc.to_unix)
+    assert_eq(closed["status"], "down")
+  end
+
+  test("a UDP port nobody answers on is down, with the reason in words") do
+    monitor = probe_monitor({
+      "kind": "udp",
+      "host": "127.0.0.1",
+      "port": 9,
+      "udp_payload": "ping",
+      "timeout_s": 1
+    })
+    silent = Probe.run(monitor, DateTime.utc.to_unix)
+    assert_eq(silent["status"], "down")
+    if defined("UDP")
+      assert(["Port injoignable", "Aucune réponse en 1 s"].includes?(silent["error"]), silent["error"])
+    else
+      assert_contains(silent["error"], "Soli 2.33")
+    end
+  end
+
+  test("evaluates what TCP.check and UDP.check answer") do
+    udp = probe_monitor({
+      "kind": "udp",
+      "host": "game.example.com",
+      "port": 27015,
+      "keyword": "ok",
+      "degraded_ms": 500
+    })
+    up = Probe.evaluate_port(
+      udp,
+      {
+        "open": true,
+        "latency_ms": 12.6,
+        "reply": "status ok",
+        "error": nil
+      }
+    )
+    assert_eq(up["status"], "up")
+    assert_eq(up["latency_ms"], 13)
+    wrong = Probe.evaluate_port(
+      udp,
+      {
+        "open": true,
+        "latency_ms": 12.0,
+        "reply": "busy",
+        "error": nil
+      }
+    )
+    assert_eq(wrong["status"], "down")
+    assert_eq(wrong["error"], "Réponse sans « ok »")
+    slow = Probe.evaluate_port(
+      udp,
+      {
+        "open": true,
+        "latency_ms": 900.0,
+        "reply": "ok",
+        "error": nil
+      }
+    )
+    assert_eq(slow["status"], "degraded")
+    closed = Probe.evaluate_port(
+      udp,
+      {"open": false, "error": "port unreachable: x:1 answered ICMP port unreachable"}
+    )
+    assert_eq(closed["error"], "Port injoignable")
+    silent = Probe.evaluate_port(
+      udp,
+      {"open": false, "error": "no reply from x:1 within 3.0s"}
+    )
+    assert_eq(silent["error"], "Aucune réponse en 3 s")
+    tcp = probe_monitor({
+      "kind": "tcp",
+      "host": "db.example.com",
+      "port": 5432,
+      "keyword": "ignored"
+    })
+    assert_eq(Probe.evaluate_port(
+      tcp,
+      {"open": true, "latency_ms": 2.0}
+    )["status"], "up", "TCP reads no reply")
+  end
+
+  test("a private target is refused when private targets are off") do
+    monitor = probe_monitor({
+      "kind": "tcp",
+      "host": "bad host!",
+      "port": 22
+    })
+    assert_contains(Probe.run(monitor, DateTime.utc.to_unix)["error"], "Cible refusée")
+    monitor = probe_monitor({
+      "kind": "udp",
+      "host": "bad host!",
+      "port": 53,
+      "udp_payload": "x"
+    })
+    assert_contains(Probe.run(monitor, DateTime.utc.to_unix)["error"], "Cible refusée")
+  end
+end

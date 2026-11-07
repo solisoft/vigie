@@ -10,6 +10,8 @@ class Probe
   static def run(monitor, now)
     match monitor.kind {
       "tls" => Probe.tls(monitor),
+      "tcp" => Probe.tcp(monitor),
+      "udp" => Probe.udp(monitor),
       "heartbeat" => Probe.heartbeat(monitor, now),
       _ => Probe.http(monitor),
     }
@@ -131,6 +133,53 @@ class Probe
     verdict
   end
 
+  # TCP: the port accepts a connection (nothing sent, nothing read).
+  static def tcp(monitor)
+    refusal = TargetGuard.host_refusal(monitor.host, TargetGuard.allow_private?)
+    return Probe.result("down", nil, nil, "Cible refusée : #{refusal}") unless refusal.nil?
+    return Probe.result("down", nil, nil, "Sonde TCP : il faut Soli 2.33 ou plus récent") unless defined("TCP")
+
+    outcome = nil
+    try
+      outcome = TCP.check(monitor.host, monitor.port, timeout: monitor.timeout_s)
+    catch error
+      return Probe.result("down", nil, nil, Probe.describe_error(error.to_s, monitor.timeout_s))
+    end
+    Probe.evaluate_port(monitor, outcome)
+  end
+
+  # UDP: the service answers the monitor's message — and, when a keyword is
+  # set, its answer contains it. Silence is down: UDP has no handshake.
+  static def udp(monitor)
+    refusal = TargetGuard.host_refusal(monitor.host, TargetGuard.allow_private?)
+    return Probe.result("down", nil, nil, "Cible refusée : #{refusal}") unless refusal.nil?
+    return Probe.result("down", nil, nil, "Sonde UDP : il faut Soli 2.33 ou plus récent") unless defined("UDP")
+
+    outcome = nil
+    try
+      outcome = UDP.check(monitor.host, monitor.port, monitor.udp_payload.to_s, timeout: monitor.timeout_s)
+    catch error
+      return Probe.result("down", nil, nil, Probe.describe_error(error.to_s, monitor.timeout_s))
+    end
+    Probe.evaluate_port(monitor, outcome)
+  end
+
+  # What TCP.check / UDP.check found, as a result: closed or silent is down,
+  # an unexpected UDP answer is down, a slow one degraded.
+  static def evaluate_port(monitor, outcome)
+    unless outcome["open"] == true
+      return Probe.result("down", nil, nil, Probe.describe_error(outcome["error"].to_s, monitor.timeout_s))
+    end
+
+    latency_ms = outcome["latency_ms"].to_f.round.to_i
+    expected = monitor.keyword.to_s
+    if monitor.kind == "udp" && expected.present? && !outcome["reply"].to_s.includes?(expected)
+      return Probe.result("down", latency_ms, nil, "Réponse sans « #{expected} »")
+    end
+
+    Probe.speed_verdict(monitor, latency_ms, nil)
+  end
+
   # Heartbeat: down once interval + grace pass without a ping. A monitor that
   # has never been pinged gets that long from its creation.
   static def heartbeat(monitor, now)
@@ -160,6 +209,8 @@ class Probe
   # Transport errors, in words an on-call person reads at 3 am.
   static def describe_error(message, timeout_s)
     lowered = message.downcase
+    return "Aucune réponse en #{timeout_s} s" if lowered.includes?("no reply")
+    return "Port injoignable" if lowered.includes?("port unreachable")
     if lowered.includes?("timed out") || lowered.includes?("timeout") || lowered.includes?("deadline")
       return "Délai dépassé (#{timeout_s} s)"
     end

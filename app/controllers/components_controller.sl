@@ -55,7 +55,9 @@ class ComponentsController < AdminController
         "url": true,
         "host": true,
         "port": true,
-        "every_hours": true
+        "every_hours": true,
+        "payload": true,
+        "expect": true
       }
     )
     outcome = ServiceSetup.add_monitor(@component, @new_kind, @new_form)
@@ -111,6 +113,7 @@ class ComponentsController < AdminController
     end.compact.first
     @new_kind ||= "http"
     @default_url = @service_host.nil? ? "" : "https://#{this.service_host}/"
+    @default_port = ["http", "tls"].includes?(@new_kind) ? 443 : nil
     @kind_options = [
       {
         "value": "http",
@@ -123,9 +126,19 @@ class ComponentsController < AdminController
         "hint": "n'expire pas"
       },
       {
+        "value": "tcp",
+        "label": "Un port TCP",
+        "hint": "accepte les connexions"
+      },
+      {
+        "value": "udp",
+        "label": "Un service UDP",
+        "hint": "répond à un message"
+      },
+      {
         "value": "heartbeat",
         "label": "Une tâche planifiée",
-        "hint": "s'est bien exécutée"
+        "hint": "prévient Vigie à chaque exécution"
       }
     ]
     @new_form ||= {}

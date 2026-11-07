@@ -61,8 +61,9 @@
       }
       function sync() {
         var kind = current();
-        form.querySelectorAll('[data-kind]').forEach(function (fieldset) {
-          fieldset.hidden = fieldset.getAttribute('data-kind') !== kind;
+        form.querySelectorAll('[data-kind]').forEach(function (part) {
+          // data-kind lists the kinds a part serves: "tls tcp udp".
+          part.hidden = part.getAttribute('data-kind').split(' ').indexOf(kind) < 0;
         });
       }
       if (select) select.addEventListener('change', sync);

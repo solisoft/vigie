@@ -52,8 +52,8 @@
     <label class="check"><%- f.check_box("follow_redirects") %> Suivre les redirections</label>
   </fieldset>
 
-  <fieldset class="kind-fields" data-kind="tls">
-    <legend>Certificat TLS</legend>
+  <fieldset class="kind-fields" data-kind="tls tcp udp">
+    <legend>Hôte et port</legend>
     <div class="row">
       <div>
         <%- f.label("host", "Hôte") %>
@@ -65,10 +65,20 @@
         <%- f.number_field("port", {"min": 1, "max": 65535}) %>
         <%- f.errors_for("port") %>
       </div>
-      <div>
+      <div data-kind="tls">
         <%- f.label("tls_warn_days", "Alerter à (jours)") %>
         <%- f.number_field("tls_warn_days", {"min": 1, "max": 90}) %>
       </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="kind-fields" data-kind="udp">
+    <legend>Message UDP</legend>
+    <div>
+      <%- f.label("udp_payload", "Message envoyé") %>
+      <%- f.text_field("udp_payload", {"maxlength": 1024}) %>
+      <%- f.errors_for("udp_payload") %>
+      <span class="hint">UDP n'a pas de poignée de main : le service doit répondre à ce message.</span>
     </div>
   </fieldset>
 

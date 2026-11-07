@@ -138,6 +138,7 @@ class MonitorsController < AdminController
         "host": true,
         "port": true,
         "tls_warn_days": true,
+        "udp_payload": true,
         "grace_s": true,
         "interval_s": true,
         "failure_threshold": true,
@@ -151,7 +152,13 @@ class MonitorsController < AdminController
     @nav = "monitors"
     @title = title
     @description = "Configuration d'une sonde"
-    @kinds = [["HTTP(S)", "http"], ["Certificat TLS", "tls"], ["Heartbeat (cron)", "heartbeat"]]
+    @kinds = [
+      ["HTTP(S)", "http"],
+      ["Certificat TLS", "tls"],
+      ["Port TCP", "tcp"],
+      ["Service UDP", "udp"],
+      ["Heartbeat (cron)", "heartbeat"]
+    ]
     @methods = ["GET", "HEAD", "POST"]
   end
 

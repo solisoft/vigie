@@ -509,7 +509,32 @@ describe("Admin pages and components") do
     )
     mail = Monitor.find_by("name", "Certificat mail.example.com")
     assert_eq(mail.port, 993)
-    assert_eq(Component.find(component._key).monitor_ids.length, 5)
+    post(
+      "/admin/composants/#{component._key}/sondes",
+      {
+        "kind": "tcp",
+        "host": "db.example.com",
+        "port": "5432"
+      }
+    )
+    database = Monitor.find_by("name", "API · TCP 5432")
+    assert_eq(database.kind, "tcp")
+    assert_eq(database.target_label, "db.example.com:5432")
+    assert_eq(database.kind_label, "Port TCP")
+    post(
+      "/admin/composants/#{component._key}/sondes",
+      {
+        "kind": "udp",
+        "host": "game.example.com",
+        "port": "27015",
+        "payload": "status",
+        "expect": "ok"
+      }
+    )
+    game = Monitor.find_by("name", "API · UDP 27015")
+    assert_eq(game.udp_payload, "status")
+    assert_eq(game.keyword, "ok")
+    assert_eq(Component.find(component._key).monitor_ids.length, 7)
   end
 
   test("refuses a monitor with a bad address or an unknown kind, and writes nothing") do
@@ -526,7 +551,26 @@ describe("Admin pages and components") do
     )
     assert_eq(res_status(bad), 422)
     assert_contains(res_body(bad), "Sonde refusée")
-    assert_eq(res_status(post("/admin/composants/#{component._key}/sondes", {"kind": "udp"})), 422)
+    assert_eq(res_status(post("/admin/composants/#{component._key}/sondes", {"kind": "smtp"})), 422)
+    no_message = post(
+      "/admin/composants/#{component._key}/sondes",
+      {
+        "kind": "udp",
+        "host": "api.example.com",
+        "port": "27015"
+      }
+    )
+    assert_eq(res_status(no_message), 422)
+    assert_contains(res_body(no_message), "message à envoyer est obligatoire")
+    bad_port = post(
+      "/admin/composants/#{component._key}/sondes",
+      {
+        "kind": "tcp",
+        "host": "api.example.com",
+        "port": "70000"
+      }
+    )
+    assert_eq(res_status(bad_port), 422)
     assert_eq(res_status(post(
       "/admin/composants/#{component._key}/sondes",
       {"kind": "tls", "host": ""}

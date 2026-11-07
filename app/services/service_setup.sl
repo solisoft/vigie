@@ -151,6 +151,24 @@ class ServiceSetup
         "tls_warn_days": 14
       }
     end
+    if kind == "tcp" || kind == "udp"
+      host = form["host"].to_s.trim.downcase
+      port = form["port"].to_s.trim.to_i
+      monitor = {
+        "name": name.present? ? name : "#{component.name} · #{kind.upcase} #{port}",
+        "kind": kind,
+        "host": host,
+        "port": port,
+        "interval_s": 60,
+        "degraded_ms": 1500,
+        "failure_threshold": 2
+      }
+      if kind == "udp"
+        monitor["udp_payload"] = form["payload"].to_s
+        monitor["keyword"] = form["expect"].to_s.trim
+      end
+      return monitor
+    end
     if kind == "heartbeat"
       hours = form["every_hours"].to_s.trim.present? ? form["every_hours"].to_s.trim.to_i : 1
       return {

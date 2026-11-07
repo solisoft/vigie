@@ -52,10 +52,18 @@
         <input id="probe_url" type="url" name="url" inputmode="url" value="<%= @new_form["url"] ?? @default_url %>" placeholder="https://exemple.fr/sante">
         <p class="hint">Contrôlée chaque minute : en panne si elle ne répond pas en 10 s ou renvoie une erreur, dégradée au-delà de 1,5 s.</p>
       </div>
-      <div class="kind-fields row" data-kind="tls">
+      <div class="kind-fields row" data-kind="tls tcp udp">
         <div><label for="probe_host">Hôte</label><input id="probe_host" type="text" name="host" value="<%= @new_form["host"] ?? @service_host %>" placeholder="exemple.fr"></div>
-        <div><label for="probe_port">Port</label><input id="probe_port" type="number" name="port" value="<%= @new_form["port"] ?? 443 %>" min="1" max="65535"></div>
-        <p class="hint">Vérifiée chaque heure : dégradée 14 jours avant l'expiration, en panne une fois expirée.</p>
+        <div><label for="probe_port">Port</label><input id="probe_port" type="number" name="port" value="<%= @new_form["port"] ?? @default_port %>" min="1" max="65535"></div>
+        <p class="hint" data-kind="tls">Vérifiée chaque heure : dégradée 14 jours avant l'expiration, en panne une fois expirée.</p>
+        <p class="hint" data-kind="tcp">Contrôlé chaque minute : en panne si la connexion n'aboutit pas en 10 s. Rien n'est envoyé.</p>
+      </div>
+      <div class="kind-fields" data-kind="udp">
+        <label for="probe_payload">Message envoyé</label>
+        <input id="probe_payload" type="text" name="payload" maxlength="1024" value="<%= @new_form["payload"] %>" placeholder="status">
+        <label for="probe_expect">La réponse contient (facultatif)</label>
+        <input id="probe_expect" type="text" name="expect" value="<%= @new_form["expect"] %>" placeholder="ok">
+        <p class="hint">UDP n'a pas de poignée de main : le service doit répondre à ce message. Sans réponse en 10 s, la sonde passe en panne.</p>
       </div>
       <div class="kind-fields" data-kind="heartbeat">
         <label for="probe_every">La tâche tourne toutes les</label>

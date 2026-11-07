@@ -1,9 +1,11 @@
-# Something Vigie watches: an HTTP(S) endpoint, a TLS certificate, or a
+# Something Vigie watches: an HTTP(S) endpoint, a TLS certificate, a TCP port
+# that accepts connections, a UDP service that answers a message, or a
 # heartbeat that a cron job sends to a secret URL.
 #
 # Fields: name, kind ("http" | "tls" | "heartbeat"), url, http_method,
 # status_min, status_max, keyword, follow_redirects, timeout_s, degraded_ms,
-# host, port, tls_warn_days, heartbeat_token, grace_s, interval_s,
+# host, port, tls_warn_days, udp_payload (the datagram a UDP probe sends; its
+# expected reply goes in keyword), heartbeat_token, grace_s, interval_s,
 # failure_threshold, paused.
 # State written by the checker: status, consecutive_failures, last_checked_at,
 # next_check_at, last_latency_ms, last_http_status, last_error,
@@ -11,8 +13,13 @@
 const MONITOR_KINDS = [
   "http",
   "tls",
+  "tcp",
+  "udp",
   "heartbeat"
 ]
+# Kinds that watch a host:port rather than a URL.
+const PORT_KINDS = ["tls", "tcp", "udp"]
+const MAX_UDP_PAYLOAD_BYTES = 1024
 const HTTP_METHODS = [
   "GET",
   "HEAD",
@@ -56,7 +63,7 @@ class Monitor < Model
 
   # The address a person reads: the URL, host:port, or the ping path.
   def target_label
-    return "#{this.host}:#{this.port}" if @kind == "tls"
+    return "#{this.host}:#{this.port}" if PORT_KINDS.includes?(@kind)
     return "/ping/#{this.heartbeat_token}" if @kind == "heartbeat"
 
     @url
@@ -81,6 +88,8 @@ class Monitor < Model
   static def label_for_kind(kind)
     match kind {
       "tls" => "Certificat TLS",
+      "tcp" => "Port TCP",
+      "udp" => "Service UDP",
       "heartbeat" => "Heartbeat",
       _ => "HTTP(S)",
     }
@@ -170,7 +179,21 @@ class Monitor < Model
 
   def _kind_errors
     return @_http_errors if @kind == "http"
-    return @_tls_errors if @kind == "tls"
+    return @_tls_errors if PORT_KINDS.includes?(@kind) && @kind != "udp"
+    return @_tls_errors + @_udp_errors if @kind == "udp"
+
+    []
+  end
+
+  def _udp_errors
+    payload = @udp_payload.to_s
+    if payload.blank?
+      return [{"field": "udp_payload", "message": "le message à envoyer est obligatoire"}]
+    end
+
+    if payload.bytes.length > MAX_UDP_PAYLOAD_BYTES
+      return [{"field": "udp_payload", "message": "#{MAX_UDP_PAYLOAD_BYTES} octets au plus"}]
+    end
 
     []
   end
