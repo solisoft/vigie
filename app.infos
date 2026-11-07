@@ -1,0 +1,13 @@
+# How soli-proxy runs this app (site dir is a symlink to this project).
+name = "vigie.solisoft.test"
+domain = "vigie.solisoft.test"
+
+start_script = "soli serve . --port $PORT --workers $WORKERS --strict-port"
+workers = 2
+stop_script = ""
+
+health_check = "/health"
+graceful_timeout = 30
+
+port_range_start = 20000
+port_range_end = 30000

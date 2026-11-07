@@ -130,3 +130,7 @@ app/jobs/                      SchedulerJob (15 s), CheckMonitorJob, RollupJob (
 Les heures sont en UTC. Pour qui modifie le code : sur Soli 2.32,
 `DateTime#format` rend l'heure locale du serveur ; Vigie lit donc dates et
 heures dans `to_iso`.
+
+## Licence
+
+MIT — voir [LICENSE](LICENSE).
