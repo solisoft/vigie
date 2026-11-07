@@ -24,9 +24,17 @@ describe("ProductionSetup") do
 
   test("a site's path and redirect setting reach its HTTP monitor") do
     ProductionSetup.run
-    villa = Monitor.find_by("name", "Villa Vladimir")
-    assert_eq(villa.url, "https://vv.solisoft.net/fr")
-    assert_eq(villa.follow_redirects, false)
+    docs = ProductionSetup.site_monitors([
+      "Docs",
+      "docs.example.com",
+      "Clients",
+      "La doc",
+      399,
+      "/fr"
+    ])[0]
+    assert_eq(docs.url, "https://docs.example.com/fr")
+    assert_eq(docs.follow_redirects, false)
+    assert_null(Monitor.find_by("name", "Villa Vladimir"))
     assert_eq(Monitor.find_by("name", "Vitaliseur").follow_redirects, true)
     assert_eq(Monitor.find_by("name", "CSW admin").status_max, 401)
     assert_eq(Monitor.find_by("name", "Certificat grc.solisoft.net").kind, "tls")
@@ -34,13 +42,13 @@ describe("ProductionSetup") do
 
   test("a second run adds nothing and puts a changed monitor back in step") do
     ProductionSetup.run
-    villa = Monitor.find_by("name", "Villa Vladimir")
-    villa.url = "https://vv.solisoft.net/"
-    villa.save
+    vitaliseur = Monitor.find_by("name", "Vitaliseur")
+    vitaliseur.url = "https://vitaliseur.com/ailleurs"
+    vitaliseur.save
     ProductionSetup.run
     assert_eq(Monitor.count, PRODUCTION_SITES.length * 2)
     assert_eq(Component.count, PRODUCTION_SITES.length)
-    assert_eq(Monitor.find_by("name", "Villa Vladimir").url, "https://vv.solisoft.net/fr")
+    assert_eq(Monitor.find_by("name", "Vitaliseur").url, "https://vitaliseur.com/")
   end
 
   test("creates the admin account once, and nothing without a password") do

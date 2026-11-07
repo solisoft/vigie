@@ -8,9 +8,10 @@
 #
 # By default redirects are not followed: a 3xx (a sign-in redirect) answers
 # "up". A site whose root only redirects is probed on the page that does the
-# work (vv: /fr), or with redirects followed (vitaliseur.com). The sites behind
+# work (an optional path), or with redirects followed (vitaliseur.com). The sites behind
 # Basic auth (401) and eui-data (404 at its root) get a wider range.
-# lang.solisoft.net is left out: it answered 421 on 07/11/2026.
+# lang.solisoft.net is left out: it answered 421 on 07/11/2026; vv.solisoft.net
+# was removed the same day.
 #
 # The HTTP monitor of a listed site is kept in step with this list: a second
 # run updates its URL, status range and redirect setting.
@@ -50,7 +51,6 @@ const PRODUCTION_SITES = [
   ["Pattes & Sabots", "pattes-et-sabots.solisoft.net", "Applications", "Le carnet de santé des animaux", 399],
   ["Boussole", "boussole.solisoft.net", "Applications", "Boussole", 399],
   ["Diététique", "dietetique.solisoft.net", "Applications", "Diététique", 399],
-  ["Villa Vladimir", "vv.solisoft.net", "Clients", "Le site de la villa", 399, "/fr"],
   ["CSW admin", "csw-admin.solisoft.net", "Applications", "CSW, administration (accès protégé)", 401],
   ["CSW B2B", "csw-b2b.solisoft.net", "Applications", "CSW, boutique B2B (accès protégé)", 401],
   ["CSW B2C", "csw-b2c.solisoft.net", "Applications", "CSW, boutique B2C (accès protégé)", 401],
