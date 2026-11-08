@@ -211,18 +211,27 @@ class Probe
     lowered = message.downcase
     return "Aucune réponse en #{timeout_s} s" if lowered.includes?("no reply")
     return "Port injoignable" if lowered.includes?("port unreachable")
-    if lowered.includes?("timed out") || lowered.includes?("timeout") || lowered.includes?("deadline")
-      return "Délai dépassé (#{timeout_s} s)"
+
+    timed_out = ["timed out", "timeout", "deadline", "no answer"].any? do |marker|
+      lowered.includes?(marker)
     end
+    return "Délai dépassé (#{timeout_s} s)" if timed_out
 
     return "Cible refusée (adresse privée)" if lowered.includes?("ssrf")
     return "Résolution DNS impossible" if lowered.includes?("dns") || lowered.includes?("lookup")
     return "Connexion refusée" if lowered.includes?("refused")
+    return "Connexion interrompue par le serveur" if lowered.includes?("reset")
+
+    closed = ["connection closed", "unexpected eof", "incomplete message", "broken pipe"].any? do |marker|
+      lowered.includes?(marker)
+    end
+    return "Connexion fermée avant la réponse" if closed
     return "Trop de redirections" if lowered.includes?("redirect")
     return "Certificat TLS invalide" if lowered.includes?("certificate")
     return "Poignée de main TLS impossible" if lowered.includes?("handshake")
 
-    message.truncate(160)
+    # The interpreter's " at line:column" says where Vigie was, not the target.
+    Regex.replace(" at [0-9]+:[0-9]+$", message.trim, "").truncate(160)
   end
 
   static def duration_label(seconds)

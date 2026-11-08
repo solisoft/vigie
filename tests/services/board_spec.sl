@@ -340,6 +340,101 @@ describe("Models") do
   end
 end
 
+def board_failure(monitor, at, error, maintenance = false)
+  Check.create({
+    "monitor_id": monitor._key,
+    "at": at,
+    "day": Checker.day_of(at),
+    "status": "down",
+    "ok": false,
+    "error": error,
+    "maintenance": maintenance
+  })
+end
+
+describe("StatusBoard disruptions") do
+  before_each() do
+    board_reset()
+  end
+
+  test("groups close failures into one disruption, newest first, with the service and the reason") do
+    now = DateTime.utc.to_unix
+    board_failure(board_api, now - 3600, "Aucune réponse en 10 s")
+    board_failure(board_api, now - 3600 + 60, "Aucune réponse en 10 s")
+    board_failure(board_web, now - 3 * 86400, "HTTP 502 (attendu 200–399)")
+    board_failure(board_web, now - 2 * 86400, "pendant la maintenance", true)
+    Check.create({
+      "monitor_id": board_api._key,
+      "at": now - 7200,
+      "day": Checker.day_of(now),
+      "status": "degraded",
+      "ok": true
+    })
+    disruptions = StatusBoard.build(board_page, now)["disruptions"]
+    assert_eq(disruptions.length, 2, "maintenance and slowness are not disruptions")
+    assert_eq(disruptions[0]["services"], ["API"])
+    assert_eq(disruptions[0]["checks"], 2)
+    assert_eq(disruptions[0]["error"], "Aucune réponse en 10 s")
+    assert_eq(disruptions[0]["started_at"], now - 3600)
+    assert_eq(disruptions[1]["services"], ["Web"])
+    assert_eq(disruptions[1]["error"], "HTTP 502 (attendu 200–399)")
+  end
+
+  test("failures far apart are two disruptions; one an incident tells about is left out") do
+    now = DateTime.utc.to_unix
+    board_failure(board_api, now - 7200, "a")
+    board_failure(board_api, now - 3600, "b")
+    Incident.create({
+      "title": "API indisponible",
+      "kind": "auto",
+      "status": "resolved",
+      "impact": "outage",
+      "monitor_ids": [board_api._key],
+      "started_at": now - 3600,
+      "resolved_at": now - 3000
+    })
+    disruptions = StatusBoard.build(board_page, now)["disruptions"]
+    assert_eq(disruptions.length, 1)
+    assert_eq(disruptions[0]["error"], "a")
+  end
+
+  test("services failing together for the same reason are one row") do
+    now = DateTime.utc.to_unix
+    board_failure(board_api, now - 600, "connection reset at 34:21")
+    board_failure(board_web, now - 590, "connection reset at 34:21")
+    board_failure(board_web, now - 86400, "HTTP 502 (attendu 200–399)")
+    disruptions = StatusBoard.build(board_page, now)["disruptions"]
+    assert_eq(disruptions.length, 2)
+    assert_eq(disruptions[0]["services"], ["API", "Web"])
+    assert_eq(disruptions[0]["checks"], 2)
+    assert_eq(disruptions[0]["error"], "Connexion interrompue par le serveur")
+    assert_eq(disruptions[1]["services"], ["Web"])
+  end
+
+  test("the public page lists them, and says so when there are none") do
+    now = DateTime.utc.to_unix
+    assert_contains(res_body(get("/s/#{board_page.slug}")), "Aucune perturbation sur les 14 derniers jours")
+    board_failure(board_web, now - 600, "Aucune réponse en 10 s")
+    body = res_body(get("/s/#{board_page.slug}"))
+    assert_contains(body, "Perturbations · 14 jours")
+    assert_contains(body, "1 contrôle en échec · Aucune réponse en 10 s")
+    many = StatusPage.create({"title": "Beaucoup", "slug": "beaucoup"})
+    ["Un", "Deux", "Trois", "Quatre"].each do |name|
+      monitor = Monitor.create({
+        "name": name,
+        "url": "https://#{name.downcase}.example.com"
+      })
+      Component.create({
+        "page_id": many._key,
+        "name": "Service #{name}",
+        "monitor_ids": [monitor._key]
+      })
+      board_failure(monitor, now - 300, "connection reset")
+    end
+    assert_contains(res_body(get("/s/beaucoup")), "4 services en même temps")
+  end
+end
+
 describe("DemoSeed") do
   test("builds a living demo, and running it twice changes nothing") do
     board_reset()

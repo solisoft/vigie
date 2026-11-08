@@ -10,6 +10,10 @@ const STATUS_SEVERITY = {
   "pending": 0
 }
 const HISTORY_DAYS = 90
+# Failed checks closer than this (on top of the monitor's interval) belong to
+# the same disruption.
+const DISRUPTION_GAP_S = 120
+const DISRUPTION_LIMIT = 30
 
 class StatusBoard
   static def build(page, now)
@@ -21,6 +25,7 @@ class StatusBoard
     maintenances = []
     open_incidents = []
     history = []
+    failures = []
     grouped(fn() {
       monitors = Monitor.where("doc._key IN @ids", {"ids": monitor_ids}).all
       maintenances = Maintenance.where(
@@ -39,6 +44,10 @@ class StatusBoard
         "doc.status == 'resolved' AND doc.started_at >= @since AND LENGTH(INTERSECTION(doc.monitor_ids, @ids)) > 0",
         {"since": now - HISTORY_DAYS * 86400, "ids": monitor_ids}
       ).order("started_at", "desc").limit(20).all
+      failures = Check.where(
+        "doc.monitor_id IN @ids AND doc.status == 'down' AND doc.maintenance != true AND doc.at >= @since",
+        {"ids": monitor_ids, "since": now - Rollup.retention_days * 86400}
+      ).order("at").limit(2000).all
     })
     today = Checker.day_of(now)
     board_context = {
@@ -72,6 +81,13 @@ class StatusBoard
       "history": history.map do |incident|
         StatusBoard.incident_row(incident, board_context)
       end,
+      "disruptions": StatusBoard.disruptions(
+        failures,
+        components,
+        board_context["monitors"],
+        open_incidents + history,
+        now
+      ),
       "generated_at": now
     }
   end
@@ -208,6 +224,86 @@ class StatusBoard
       {"name": name, "components": rows.filter do |row|
         row["group"].to_s == name
       end}
+    end
+  end
+
+  # What made a day "Perturbations" without an incident: the failed checks of
+  # each monitor, grouped into episodes (failures less than an interval plus
+  # DISRUPTION_GAP_S apart), newest first. An episode an incident already
+  # tells about is left out.
+  # -> [{"services", "monitor", "started_at", "duration", "checks", "error"}]
+  static def disruptions(failures, components, monitors_by_key, incidents, now)
+    episodes = []
+    failures.group_by("monitor_id").each do |monitor_id, checks|
+      monitor = monitors_by_key[monitor_id]
+      next if monitor.nil?
+
+      gap = monitor.interval_s.to_i + DISRUPTION_GAP_S
+      current = nil
+      checks.sort_by(&:at).each do |check|
+        if !current.nil? && check.at - current["last"] <= gap
+          current["last"] = check.at
+          current["checks"] = current["checks"] + 1
+        else
+          episodes.push(current) unless current.nil?
+          current = {
+            "monitor": monitor,
+            "started_at": check.at,
+            "last": check.at,
+            "checks": 1,
+            "error": check.error
+          }
+        end
+      end
+      episodes.push(current) unless current.nil?
+    end
+    rows = episodes.filter do |episode|
+      !StatusBoard.told_by_incident?(episode, incidents, now)
+    end.map do |episode|
+      monitor = episode["monitor"]
+      services = components.filter do |component|
+        component.monitor_ids.includes?(monitor._key)
+      end.map(&:name)
+      {
+        "services": services.length > 0 ? services : [monitor.name],
+        "started_at": episode["started_at"],
+        "seconds": episode["last"] - episode["started_at"] + monitor.interval_s.to_i,
+        "checks": episode["checks"],
+        "error": Probe.describe_error(episode["error"].to_s, monitor.timeout_s ?? 10)
+      }
+    end
+    StatusBoard.merge_simultaneous(rows).sort_by do |row|
+      -row["started_at"]
+    end.take(DISRUPTION_LIMIT).map do |row|
+      row.merge({"duration": Probe.duration_label(row["seconds"])})
+    end
+  end
+
+  # Several services failing within the same DISRUPTION_GAP_S for the same
+  # reason are one event (often the network of Vigie itself): one row naming
+  # them all, not one row each.
+  static def merge_simultaneous(rows)
+    merged = []
+    rows.sort_by(&:started_at).each do |row|
+      twin = merged.find do |kept|
+        kept["error"] == row["error"] && (row["started_at"] - kept["started_at"]).abs <= DISRUPTION_GAP_S
+      end
+      if twin.nil?
+        merged.push(row.merge({}))
+      else
+        twin["services"] = (twin["services"] + row["services"]).uniq
+        twin["checks"] = twin["checks"] + row["checks"]
+        twin["seconds"] = [twin["seconds"], row["seconds"]].max
+      end
+    end
+    merged
+  end
+
+  static def told_by_incident?(episode, incidents, now)
+    incidents.any? do |incident|
+      incident.monitor_ids.includes?(episode["monitor"]._key) &&
+          episode["started_at"] >= incident.started_at.to_i - DISRUPTION_GAP_S &&
+          episode["started_at"] <= (incident.resolved_at ?? now).to_i + DISRUPTION_GAP_S
     end
   end
 

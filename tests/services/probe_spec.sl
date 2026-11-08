@@ -125,6 +125,20 @@ describe("Probe.describe_error") do
     assert_eq(Probe.describe_error("invalid peer certificate: Expired", 5), "Certificat TLS invalide")
     assert_eq(Probe.describe_error("TLS handshake with x failed", 5), "Poignée de main TLS impossible")
     assert_eq(Probe.describe_error("something else", 5), "something else")
+    reset = "error sending request for url (https://x/): client error (SendRequest): "
+    + "connection error: connection reset at 34:21"
+    assert_eq(Probe.describe_error(reset, 5), "Connexion interrompue par le serveur")
+    assert_eq(
+      Probe.describe_error("hyper: connection closed before message completed", 5),
+      "Connexion fermée avant la réponse"
+    )
+    assert_eq(Probe.describe_error("HTTP.stream: no answer in 10 s at 34:21", 10), "Délai dépassé (10 s)")
+    assert_eq(Probe.describe_error("weird failure at 12:7", 5), "weird failure")
+    assert_eq(
+      Probe.describe_error("HTTP 502 (attendu 200–399)", 5),
+      "HTTP 502 (attendu 200–399)",
+      "French stays as is"
+    )
   end
 
   test("says how long a silence lasted") do

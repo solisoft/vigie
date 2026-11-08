@@ -101,6 +101,34 @@
         </ul>
       <% end %>
     </section>
+
+    <section class="section" aria-labelledby="disruptions-title">
+      <h2 class="section-title" id="disruptions-title">Perturbations · 14 jours</h2>
+      <p class="section-lede">Des contrôles en échec trop brefs pour ouvrir un incident : ce sont eux qui marquent un jour en perturbations.</p>
+      <% if @board["disruptions"].length == 0 %>
+        <p class="empty">Aucune perturbation sur les 14 derniers jours.</p>
+      <% else %>
+        <ul class="history disruptions">
+          <% for disruption in @board["disruptions"] %>
+            <li>
+              <% if disruption["services"].length > 3 %>
+                <details class="disruption-services">
+                  <summary><strong><%= disruption["services"].length %> services en même temps</strong></summary>
+                  <p><%= disruption["services"].join(", ") %></p>
+                </details>
+              <% else %>
+                <strong><%= disruption["services"].join(", ") %></strong>
+              <% end %>
+              <p>
+                <time datetime="<%= iso_time(disruption["started_at"]) %>"><%= french_time(disruption["started_at"]) %></time>
+                · environ <%= disruption["duration"] %>
+                · <%= disruption["checks"] %> contrôle<%= disruption["checks"] > 1 ? "s" : "" %> en échec<% if disruption["error"].present? %> · <%= disruption["error"] %><% end %>
+              </p>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
   </div>
 
   <p class="sr-only" aria-live="polite" data-live-announce></p>

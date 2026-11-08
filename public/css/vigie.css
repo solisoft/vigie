@@ -525,3 +525,6 @@ a:hover { color: var(--beam); }
 .probe-name summary { cursor: pointer; font-size: .88rem; color: var(--ink-soft); }
 .probe-name[open] summary { margin-bottom: 6px; }
 @media (max-width: 520px) { .add-probe .kind-fields.row { grid-template-columns: 1fr; } }
+.disruption-services summary { cursor: pointer; }
+.disruption-services summary strong { font-weight: 600; }
+.disruption-services p { margin: 4px 0 6px; }
