@@ -130,7 +130,6 @@ end
 describe("Check metrics") do
   test("a run is timed, and its latency recorded in seconds") do
     jobs_reset()
-    Metrics.reset
     monitor = Monitor.create({
       "name": "Timed",
       "url": jobs_base + "/jobs/ok",

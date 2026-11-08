@@ -42,7 +42,6 @@ end
 describe("Incident state machine") do
   before_each() do
     flow_reset()
-    Metrics.reset
     flow_monitor = Monitor.create({
       "name": "API",
       "kind": "http",
@@ -75,6 +74,7 @@ describe("Incident state machine") do
   end
 
   test("opens one incident after N failures in a row, dated from the first one, and alerts once") do
+    opened = Metrics.value("vigie.incidents.opened", {"kind": "http"}).to_i
     Checker.record(flow_monitor, flow_result("up", nil), flow_now)
     Checker.record(flow_monitor, flow_result("down", "HTTP 503"), flow_now + 60)
     Checker.record(flow_monitor, flow_result("down", "HTTP 503"), flow_now + 120)
@@ -88,7 +88,7 @@ describe("Incident state machine") do
     assert_contains(incident.updates[0].message, "2 échecs consécutifs")
     assert_eq(Monitor.find(flow_monitor._key).status, "down")
     assert_eq(AlertDelivery.where({"event": "incident.opened"}).count, 1)
-    assert_eq(Metrics.value("vigie.incidents.opened", {"kind": "http"}), 1)
+    assert(Metrics.value("vigie.incidents.opened", {"kind": "http"}).to_i - opened >= 1)
   end
 
   test("resolves the incident on recovery, with a timeline entry and one alert") do
@@ -158,17 +158,28 @@ describe("Incident state machine") do
   end
 
   test("emits check metrics tagged by kind and status") do
-    Checker.record(flow_monitor, flow_result("up", nil), flow_now)
-    Checker.record(flow_monitor, flow_result("down", "x"), flow_now + 60)
-    assert_eq(Metrics.value(
+    # Metrics are shared by the specs running in parallel: compare before and
+    # after, and count at least what this test recorded.
+    ups = Metrics.value(
       "vigie.checks",
       {"kind": "http", "status": "up"}
-    ), 1)
-    assert_eq(Metrics.value(
+    ).to_i
+    downs = Metrics.value(
       "vigie.checks",
       {"kind": "http", "status": "down"}
-    ), 1)
-    assert_eq(Metrics.value("vigie.check.latency", {"kind": "http"})["count"], 2)
+    ).to_i
+    latencies = (Metrics.value("vigie.check.latency", {"kind": "http"}) ?? {})["count"].to_i
+    Checker.record(flow_monitor, flow_result("up", nil), flow_now)
+    Checker.record(flow_monitor, flow_result("down", "x"), flow_now + 60)
+    assert(Metrics.value(
+      "vigie.checks",
+      {"kind": "http", "status": "up"}
+    ).to_i - ups >= 1)
+    assert(Metrics.value(
+      "vigie.checks",
+      {"kind": "http", "status": "down"}
+    ).to_i - downs >= 1)
+    assert(Metrics.value("vigie.check.latency", {"kind": "http"})["count"].to_i - latencies >= 2)
   end
 end
 
